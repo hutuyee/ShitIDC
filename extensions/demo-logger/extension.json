@@ -1,0 +1,8 @@
+{
+  "name": "demo-logger",
+  "version": "1.0.0",
+  "description": "参考扩展：记录收到的核心事件并用 kv 存储计数",
+  "entry": "demo-logger.wasm",
+  "permissions": ["log", "storage"],
+  "events": []
+}

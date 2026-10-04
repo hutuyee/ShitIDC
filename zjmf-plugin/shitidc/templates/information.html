@@ -1,0 +1,35 @@
+<!-- ShitIDC 主机信息页签：魔方客户中心“主机信息”里渲染。 -->
+<div class="shitidc-host-info">
+  <h3>ShitIDC 主机信息</h3>
+  <table class="table table-bordered">
+    <tbody>
+      <tr>
+        <th style="width:180px">ShitIDC 主机 ID</th>
+        <td><code>{{ hostId ?: '未开通或未同步' }}</code></td>
+      </tr>
+      <tr>
+        <th>状态</th>
+        <td>{{ info.des ?: '未知' }}</td>
+      </tr>
+      <tr>
+        <th>用户名</th>
+        <td>{{ info.username ?: '—' }}</td>
+      </tr>
+      <tr>
+        <th>到期时间</th>
+        <td>{{ info.nextduedate ?: '—' }}</td>
+      </tr>
+      <tr>
+        <th>商品</th>
+        <td>{{ info.product_name ?: '—' }}</td>
+      </tr>
+      <tr>
+        <th>计费周期</th>
+        <td>{{ info.billing_cycle ?: '—' }}</td>
+      </tr>
+    </tbody>
+  </table>
+  <p style="color:#888;font-size:12px">
+    数据来自 ShitIDC 上游接口。密码等敏感信息不会在此展示，请在魔方后台查看或使用“同步”功能拉取。
+  </p>
+</div>

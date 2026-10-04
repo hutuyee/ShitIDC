@@ -1,0 +1,12 @@
+:root {
+  --primary: #8b8bf5;
+  --primary-soft: rgba(139, 139, 245, .14);
+  --background: #0f1115;
+  --panel: #171a21;
+  --text: #f5f6f8;
+  --muted: #a0a5b1;
+  --border: #2b303a;
+  --radius: 10px;
+  --radius-lg: 16px;
+  --shadow: 0 10px 35px rgba(0,0,0,.22);
+}

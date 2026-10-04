@@ -1,0 +1,22 @@
+FROM golang:1.24-alpine AS build
+WORKDIR /src
+COPY go.mod ./
+RUN go mod download
+COPY . .
+# The source tree is required for go mod tidy to resolve all imported packages.
+# This also makes a fresh GitHub checkout buildable even before go.sum is committed.
+RUN go mod tidy
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/shitidc-api ./cmd/server \
+ && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/shitidc-worker ./cmd/worker \
+ && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/shitidc-scheduler ./cmd/scheduler \
+ && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/shitidc-migrate ./cmd/migrate
+
+FROM alpine:3.21
+RUN adduser -D -H -u 10001 app
+WORKDIR /app
+COPY --from=build /out/* /app/
+COPY themes /app/themes
+COPY docs /app/docs
+USER app
+EXPOSE 8080
+CMD ["/app/shitidc-api"]

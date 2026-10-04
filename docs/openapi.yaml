@@ -1,0 +1,611 @@
+openapi: 3.0.3
+info:
+  title: ShitIDC API
+  version: 0.2.0
+servers:
+  - url: /api/v1
+paths:
+  /version:
+    get:
+      summary: Build version and commit (public)
+      responses: {"200": {description: OK}}
+  /auth/register:
+    post:
+      summary: Register user
+      responses: {"201": {description: Created}}
+  /auth/login:
+    post:
+      summary: |
+        Login. Failed attempts are persisted in user_security; after 10
+        failures the account is locked for 15 minutes. Migrated MagicCube
+        (legacy md5) accounts verify once and are upgraded to Argon2id.
+      responses: {"200": {description: OK}, "401": {description: Invalid credentials}, "423": {description: Account locked}}
+  /auth/password/change:
+    post:
+      summary: Change own password (current password required, all sessions revoked)
+      responses: {"200": {description: OK}}
+  /auth/password/reset/request:
+    post:
+      summary: Email a password reset code (always answers ok, no user enumeration)
+      responses: {"200": {description: OK}}
+  /auth/password/reset/confirm:
+    post:
+      summary: Consume the reset code and set a new password
+      responses: {"200": {description: OK}}
+  /auth/me:
+    get:
+      summary: Current user
+      responses: {"200": {description: OK}}
+  /auth/captcha:
+    get:
+      summary: Issue an SVG math captcha ({id, svg}); enforced on register/login/email-code/reset when Redis is configured
+      responses: {"200": {description: OK}}
+  /auth/2fa/setup:
+    post:
+      summary: Generate a pending TOTP secret (password required); returns base32 secret + otpauth URI
+      responses: {"200": {description: OK}, "403": {description: Wrong password}}
+  /auth/2fa/enable:
+    post:
+      summary: Enable the pending TOTP factor by verifying one code
+      responses: {"200": {description: OK}, "400": {description: Code invalid}}
+  /auth/2fa/disable:
+    post:
+      summary: Disable TOTP (password + current code required)
+      responses: {"200": {description: OK}}
+  /auth/2fa/status:
+    get:
+      summary: Whether TOTP is enabled for the current user
+      responses: {"200": {description: OK}}
+  /sessions:
+    get:
+      summary: List own active login sessions (device management)
+      responses: {"200": {description: OK}}
+  /sessions/{id}:
+    delete:
+      summary: Revoke one own session by id
+      responses: {"200": {description: OK}, "404": {description: Not found}}
+  /sessions/revoke-others:
+    post:
+      summary: Revoke every other active session of the current user
+      responses: {"200": {description: OK}}
+  /products/{id}/prices:
+    get:
+      summary: List purchasable billing cycles with prices for one product
+      responses: {"200": {description: OK}}
+  /product-groups:
+    get:
+      summary: List product groups with active product counts (public)
+      responses: {"200": {description: OK}}
+  /announcements:
+    get:
+      summary: List active announcements, pinned first (public)
+      responses: {"200": {description: OK}}
+  /invoices/{id}:
+    get:
+      summary: One own invoice with line items and order status
+      responses: {"200": {description: OK}, "404": {description: Not found}}
+  /services/{id}:
+    get:
+      summary: One own service with provisioned instance config; admins with service.manage may read any
+      responses: {"200": {description: OK}, "404": {description: Not found}}
+  /pay/notify/{method}:
+    any:
+      summary: Gateway async callback dispatched through the payment registry (epay legacy alias /pay/epay/notify)
+      responses: {"200": {description: "success"}, "400": {description: "fail"}}
+  /pay/return/{method}:
+    get:
+      summary: Browser redirect back from the gateway (epay legacy alias /pay/epay/return)
+      responses: {"302": {description: Redirect}}
+  /admin/products:
+    get:
+      summary: List all products incl. inactive (product.read)
+      responses: {"200": {description: OK}}
+  /admin/products/{id}:
+    put:
+      summary: Edit product name/description/price/group/sort weight; active toggles shelf state (product.write)
+      responses: {"200": {description: OK}}
+  /admin/product-groups:
+    get:
+      summary: List product groups (product.read)
+      responses: {"200": {description: OK}}
+    post:
+      summary: Create product group (product.write)
+      responses: {"201": {description: Created}}
+  /admin/product-groups/{id}:
+    put:
+      summary: Rename / re-sort product group (product.write)
+      responses: {"200": {description: OK}}
+    delete:
+      summary: Delete product group; products become ungrouped (product.write)
+      responses: {"200": {description: OK}}
+  /admin/announcements:
+    get:
+      summary: List all announcements (announcement.manage)
+      responses: {"200": {description: OK}}
+    post:
+      summary: Publish announcement (announcement.manage)
+      responses: {"201": {description: Created}}
+  /admin/announcements/{id}:
+    put:
+      summary: Update announcement (announcement.manage)
+      responses: {"200": {description: OK}}
+    delete:
+      summary: Delete announcement (announcement.manage)
+      responses: {"200": {description: OK}}
+  /coupons/validate:
+    post:
+      summary: Preview a coupon discount for a product/cycle/quantity (order.read)
+      responses: {"200": {description: OK}, "400": {description: Coupon invalid}}
+  /referral:
+    get:
+      summary: Own invite code, invited count and commission records
+      responses: {"200": {description: OK}}
+  /notifications:
+    get:
+      summary: In-app notifications with unread count
+      responses: {"200": {description: OK}}
+  /notifications/{id}/read:
+    post:
+      summary: Mark one (or "all") notifications read
+      responses: {"200": {description: OK}}
+  /tickets/{id}/attachments:
+    post:
+      summary: Upload a ticket attachment (multipart, 5MB cap, ext+magic checks)
+      responses: {"201": {description: Created}}
+  /attachments/{id}:
+    get:
+      summary: Download an attachment (owner or staff only, forced download)
+      responses: {"200": {description: File}}
+  /currencies:
+    get:
+      summary: Active currencies with rates to the base currency (public)
+      responses: {"200": {description: OK}}
+  /branding:
+    get:
+      summary: Site branding (site_name / logo_url / primary_color, public)
+      responses: {"200": {description: OK}}
+  /admin/coupons:
+    get:
+      summary: List coupons (coupon.manage)
+      responses: {"200": {description: OK}}
+    post:
+      summary: Create coupon (coupon.manage)
+      responses: {"201": {description: Created}}
+  /admin/coupons/{id}:
+    put:
+      summary: Update budget/minimum/expiry/active (coupon.manage)
+      responses: {"200": {description: OK}}
+    delete:
+      summary: Delete coupon (coupon.manage)
+      responses: {"200": {description: OK}}
+  /admin/user-groups:
+    get:
+      summary: List agent user groups with member counts (agent.manage)
+      responses: {"200": {description: OK}}
+    post:
+      summary: Create agent group with discount percent (agent.manage)
+      responses: {"201": {description: Created}}
+  /admin/user-groups/{id}:
+    put:
+      summary: Update group name/discount (agent.manage)
+      responses: {"200": {description: OK}}
+    delete:
+      summary: Delete group (agent.manage)
+      responses: {"200": {description: OK}}
+  /admin/users/{id}/group:
+    post:
+      summary: Assign a user to an agent group ("" clears) (agent.manage)
+      responses: {"200": {description: OK}}
+  /admin/statistics:
+    get:
+      summary: Revenue/recharge/refund/MRR/users/services stats + 30d series (finance.report)
+      responses: {"200": {description: OK}}
+  /admin/mail-templates:
+    get:
+      summary: List editable mail templates (provider.manage)
+      responses: {"200": {description: OK}}
+    post:
+      summary: Upsert a template ({{placeholder}} rendering) (provider.manage)
+      responses: {"200": {description: OK}}
+  /admin/mail-templates/{name}:
+    delete:
+      summary: Remove a template, falling back to built-in copy (provider.manage)
+      responses: {"200": {description: OK}}
+  /admin/extensions:
+    get:
+      summary: List WASM extensions with load state (extension.manage)
+      responses: {"200": {description: OK}}
+    post:
+      summary: Upload an extension zip (manifest + wasm, sandboxed) (extension.manage)
+      responses: {"201": {description: Created}}
+  /admin/extensions/{id}/toggle:
+    post:
+      summary: Enable/disable an extension at runtime (extension.manage)
+      responses: {"200": {description: OK}}
+  /admin/extensions/{id}:
+    delete:
+      summary: Delete an extension package (extension.manage)
+      responses: {"200": {description: OK}}
+  /admin/themes:
+    get:
+      summary: List installed theme packages (theme.manage)
+      responses: {"200": {description: OK}}
+    post:
+      summary: Install a theme zip (Zip Slip/whitelist guarded) (theme.manage)
+      responses: {"201": {description: Created}}
+  /admin/themes/{id}:
+    delete:
+      summary: Delete a theme package (theme.manage)
+      responses: {"200": {description: OK}}
+  /admin/settings/branding:
+    get:
+      summary: Branding settings (provider.manage)
+      responses: {"200": {description: OK}}
+    put:
+      summary: Save branding (site_name/logo/primary_color) (provider.manage)
+      responses: {"200": {description: OK}}
+  /admin/settings/storefront:
+    get:
+      summary: Storefront settings (active theme/base currency/order velocity) (provider.manage)
+      responses: {"200": {description: OK}}
+    put:
+      summary: Save storefront settings (provider.manage)
+      responses: {"200": {description: OK}}
+  /admin/settings/referral:
+    get:
+      summary: Referral commission settings (wallet.adjust)
+      responses: {"200": {description: OK}}
+    put:
+      summary: Save referral settings (enable/percent) (wallet.adjust)
+      responses: {"200": {description: OK}}
+  /admin/export/users.csv:
+    get:
+      summary: Export users as CSV (user.read)
+      responses: {"200": {description: CSV}}
+  /admin/export/orders.csv:
+    get:
+      summary: Export orders as CSV (order.read)
+      responses: {"200": {description: CSV}}
+  /admin/api-logs:
+    get:
+      summary: API request logs filtered by method/path/status_min/user_id (security.audit.read)
+      responses: {"200": {description: OK}}
+  /admin/payment-methods/supported:
+    get:
+      summary: Methods registered in the payment gateway registry (wallet.adjust)
+      responses: {"200": {description: OK}}
+  /products:
+    get:
+      summary: List products
+      responses: {"200": {description: OK}}
+  /orders:
+    get:
+      summary: List current user's orders
+      responses: {"200": {description: OK}}
+    post:
+      summary: Create order; server recalculates price
+      responses: {"201": {description: Created}}
+  /orders/{id}/pay:
+    post:
+      summary: Pay order from wallet
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: {type: string}
+        - in: header
+          name: Idempotency-Key
+          schema: {type: string}
+      responses: {"200": {description: Processing}}
+  /wallet:
+    get:
+      summary: Wallet balance
+      responses: {"200": {description: OK}}
+  /wallet/transactions:
+    get:
+      summary: Wallet ledger
+      responses: {"200": {description: OK}}
+  /services:
+    get:
+      summary: Services
+      responses: {"200": {description: OK}}
+  /tickets:
+    get:
+      summary: Tickets
+      responses: {"200": {description: OK}}
+    post:
+      summary: Create ticket
+      responses: {"201": {description: Created}}
+  /tickets/{id}:
+    get:
+      summary: Ticket conversation detail (owner only)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: {type: string}
+      responses: {"200": {description: OK}}
+  /tickets/{id}/reply:
+    post:
+      summary: Reply to own ticket; reopens closed tickets; notifies staff by mail
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: {type: string}
+      responses: {"201": {description: Replied}}
+  /tickets/{id}/close:
+    post:
+      summary: Close or reopen own ticket ({status: closed|open})
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: {type: string}
+      responses: {"200": {description: OK}}
+  /profile:
+    get:
+      summary: Read own editable profile
+      responses: {"200": {description: OK}}
+    put:
+      summary: Update own profile (nickname/phone/qq/real_name/company/address...)
+      responses: {"200": {description: OK}}
+  /services/{id}/renew:
+    post:
+      summary: Create a renewal order; paying it extends the service expiry
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: {type: string}
+      responses: {"201": {description: Renewal order created}}
+  /api-tokens:
+    get:
+      summary: List API tokens
+      responses: {"200": {description: OK}}
+    post:
+      summary: Create API token
+      responses: {"201": {description: Created}}
+  /admin/tickets:
+    get:
+      summary: List all tickets (ticket.manage; supports ?status=open|pending|closed)
+      responses: {"200": {description: OK}}
+  /admin/tickets/{id}:
+    get:
+      summary: Ticket conversation (ticket.manage)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: {type: string}
+      responses: {"200": {description: OK}}
+  /admin/tickets/{id}/reply:
+    post:
+      summary: Staff reply; sets status pending and emails the user (ticket.manage)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: {type: string}
+      responses: {"201": {description: Replied}}
+  /admin/tickets/{id}/status:
+    post:
+      summary: Staff ticket status transition (ticket.manage)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: {type: string}
+      responses: {"200": {description: OK}}
+  /admin/users:
+    get:
+      summary: User directory (?query=&limit=) (user.read)
+      responses: {"200": {description: OK}}
+  /admin/users/{id}/status:
+    post:
+      summary: Enable/disable a user; disabling revokes all sessions (user.write)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: {type: string}
+      responses: {"200": {description: OK}}
+  /admin/users/{id}/profile:
+    get:
+      summary: |
+        User profile with PII masked; callers holding pii.read.full get the
+        full values and the access is written to audit_logs (data masking).
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: {type: string}
+      responses: {"200": {description: OK}}
+  /admin/login-logs:
+    get:
+      summary: Per-attempt login log (?email=&limit=) (security.audit.read)
+      responses: {"200": {description: OK}}
+  /admin/services:
+    get:
+      summary: All services (?status=&limit=) (service.manage)
+      responses: {"200": {description: OK}}
+  /admin/services/{id}/suspend:
+    post:
+      summary: Suspend a service (queues provider call) (service.manage)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: {type: string}
+      responses: {"202": {description: Accepted}}
+  /admin/services/{id}/unsuspend:
+    post:
+      summary: Unsuspend a suspended service (service.manage)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: {type: string}
+      responses: {"202": {description: Accepted}}
+  /admin/services/{id}/terminate:
+    post:
+      summary: Terminate an active/suspended service (service.manage)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: {type: string}
+      responses: {"202": {description: Accepted}}
+  /admin/orders:
+    get:
+      summary: Recent orders across users (order.read)
+      responses: {"200": {description: OK}}
+  /admin/orders/{id}/refund:
+    post:
+      summary: |
+        Refund a wallet-paid order back to the user's wallet as a reversal
+        transaction (reversal entry). The original ledger rows are never
+        modified. Online (epay) refunds must be issued at the gateway first.
+        Requires wallet.adjust.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: {type: string}
+      responses: {"201": {description: Refunded}, "409": {description: Not refundable}}
+  /admin/refunds:
+    get:
+      summary: Refund history (wallet.adjust)
+      responses: {"200": {description: OK}}
+  /admin/webhooks:
+    get:
+      summary: List outbound webhooks (webhook.manage)
+      responses: {"200": {description: OK}}
+    post:
+      summary: |
+        Create a webhook. The signing secret is returned exactly once;
+        deliveries carry X-ShitIDC-Event, X-ShitIDC-Delivery and
+        X-ShitIDC-Signature ("t=<unix>,v1=hmac_sha256(t.body)").
+      responses: {"201": {description: Created}}
+  /admin/webhooks/{id}:
+    put:
+      summary: Update webhook (empty secret keeps the current one)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: {type: string}
+      responses: {"200": {description: Updated}}
+    delete:
+      summary: Delete webhook and its delivery history
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: {type: string}
+      responses: {"200": {description: Deleted}}
+  /admin/webhooks/{id}/deliveries:
+    get:
+      summary: Recent deliveries with status/attempts/response codes
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: {type: string}
+      responses: {"200": {description: OK}}
+  /admin/providers:
+    get:
+      summary: List upstream providers (provider.manage)
+      responses: {"200": {description: OK}}
+    post:
+      summary: Add MagicCube upstream provider; API key is encrypted at rest
+      responses: {"201": {description: Created}}
+  /admin/providers/{id}:
+    put:
+      summary: Update upstream provider configuration
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: {type: string}
+      responses: {"200": {description: Updated}}
+  /admin/providers/{id}/test:
+    post:
+      summary: Test login and product API for an upstream provider
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: {type: string}
+      responses: {"200": {description: Connected}}
+  /admin/providers/{id}/sync:
+    post:
+      summary: Synchronize upstream products into provider_products
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: {type: string}
+      responses: {"200": {description: Synchronized}}
+  /admin/providers/{id}/products:
+    get:
+      summary: List synchronized upstream products
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: {type: string}
+      responses: {"200": {description: OK}}
+  /admin/providers/{id}/products/{upstream_id}/import:
+    post:
+      summary: Import an upstream product and persist provider mapping
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: {type: string}
+        - in: path
+          name: upstream_id
+          required: true
+          schema: {type: string}
+      responses: {"201": {description: Imported}}
+  /compat/magiccube/v1/login_api:
+    post:
+      summary: "[compat] Exchange account + password(=full API token) for a jwt-shaped token"
+      responses: {"200": {description: OK}, "401": {description: Invalid token}}
+  /compat/magiccube/v1/products:
+    get:
+      summary: "[compat] List sellable products (product.read)"
+      responses: {"200": {description: OK}}
+  /compat/magiccube/v1/create:
+    post:
+      summary: |
+        [compat] Provision a paid service for the token owner (order.read).
+        Body = {request_id, product_ref, user_id, options}; options.billing_cycle
+        optional (default monthly). Debits the wallet; honors Idempotency-Key so
+        retries never double-provision. Returns {status, msg, id}.
+      responses: {"200": {description: Created}, "402": {description: Insufficient balance}, "404": {description: Product not found}}
+  /compat/magiccube/v1/suspend:
+    post:
+      summary: "[compat] Suspend a service owned by the token owner (service.operate); body {id}"
+      responses: {"200": {description: Accepted}, "409": {description: Invalid state}}
+  /compat/magiccube/v1/unsuspend:
+    post:
+      summary: "[compat] Unsuspend a suspended service (service.operate); body {id}"
+      responses: {"200": {description: Accepted}, "409": {description: Invalid state}}
+  /compat/magiccube/v1/terminate:
+    post:
+      summary: "[compat] Terminate an active/suspended service (service.operate); body {id}"
+      responses: {"200": {description: Accepted}, "409": {description: Invalid state}}
+  /compat/magiccube/v1/renew:
+    post:
+      summary: "[compat] Renewal order settled from wallet, extends expiry (service.operate); body {id}"
+      responses: {"200": {description: Renewed}, "402": {description: Insufficient balance}, "409": {description: Not renewable}}
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+security:
+  - bearer: []
+

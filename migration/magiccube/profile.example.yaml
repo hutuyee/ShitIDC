@@ -1,0 +1,21 @@
+name: magiccube-custom
+version: "3.x-custom"
+queries:
+  users: |
+    SELECT id AS legacy_id, email AS email, password AS password_hash, create_time AS created_at
+    FROM clients
+  products: |
+    SELECT id AS legacy_id, name AS name, description AS description,
+           CAST(month_price * 100 AS SIGNED) AS price_cents,
+           'CNY' AS currency, 'monthly' AS billing_cycle,
+           'manual' AS provider_type, NULL AS provider_product_ref
+    FROM products
+  wallets: ""
+  orders: ""
+  invoices: ""
+  payments: ""
+  services: ""
+notes: |
+  这只是字段别名示例，不代表任何特定魔方版本的真实表名。
+  迁移引擎支持 users/products/wallets/orders/invoices/payments/services。
+  请按“使用教程.md”规定的列顺序和别名补 SELECT，并先运行 --dry-run。

@@ -1,0 +1,82 @@
+# ---------------------------------------------------------------------------
+# ShitIDC .gitignore
+#
+# 原则：**只提交源码与配置样板**。任何「能重新生成」「体积大」「含密钥」
+# 「每台机器不同」的东西都不进仓库。
+# ---------------------------------------------------------------------------
+
+# ---- 密钥与环境 ----
+# .env 里有数据库密码、MASTER_KEY、各种 API 密钥，绝不能提交。
+# 需要什么变量看 .env.example / web/.env.example。
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+!web/public/*.key
+
+# ---- 编译产物 ----
+# go build 产生的可执行文件（Windows 无扩展名，Linux 是同一个名字）
+/server
+/worker
+/scheduler
+bin/
+*.exe
+*.test
+*.out
+# Go 的 vendor / 工作区文件
+vendor/
+go.work
+go.work.sum
+
+# ---- 前端 ----
+web/node_modules/
+web/dist/
+web/.vite/
+web/.cache/
+node_modules/
+.npm/
+*.tsbuildinfo
+.eslintcache
+
+# ---- 运行时数据 ----
+# 上传附件、日志、缓存、数据库导出、备份
+/uploads/
+/data/
+*.log
+logs/
+*.sql.gz
+*.dump
+backup-*.sql
+# 本地测试用的 PostgreSQL 数据目录
+pgdata/
+.pgdata/
+
+# ---- 打包产物 ----
+# 插件 zip 可以从同目录的源码重新打包（见 README），不进仓库，
+# 否则每次改一行 PHP 都会产生一个二进制 diff。
+zjmf-plugin/*.zip
+*.tar.gz
+
+# ---- 第三方参考代码 ----
+# 魔方财务 3.7.6 的参考副本（约 286MB，且是 ionCube 加密的第三方代码）。
+# 只用于对照分析，不是本项目的产物。
+_zjmf_ref/
+
+# ---- 编辑器与操作系统 ----
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ---- 临时文件 ----
+*.tmp
+*.bak
+*.orig
+*.rej
+# 手工调试时留下的散落文件（例如误把环境变量写进文件）
+$*
