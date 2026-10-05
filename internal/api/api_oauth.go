@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -45,18 +46,22 @@ func (a *App) listOAuthProviders(c *gin.Context) {
 	httpx.OK(c, 200, out)
 }
 
-// oauthCallbackURL 拼出某个通道的回调地址（必须与平台上登记的一致）。
-func (a *App) oauthCallbackURL(c *gin.Context, provider string) string {
+// publicBaseURL 返回站点公开地址；没配时按请求推断，方便本地调试。
+func (a *App) publicBaseURL(c *gin.Context) string {
 	base := strings.TrimRight(a.Cfg.PublicBaseURL, "/")
 	if base == "" {
-		// 没配公开地址时按请求推断，方便本地调试。
 		scheme := "http"
 		if c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https") {
 			scheme = "https"
 		}
 		base = scheme + "://" + c.Request.Host
 	}
-	return base + "/api/v1/auth/oauth/" + url.PathEscape(provider) + "/callback"
+	return base
+}
+
+// oauthCallbackURL 拼出某个通道的回调地址（必须与平台上登记的一致）。
+func (a *App) oauthCallbackURL(c *gin.Context, provider string) string {
+	return a.publicBaseURL(c) + "/api/v1/auth/oauth/" + url.PathEscape(provider) + "/callback"
 }
 
 // oauthStart 发起第三方授权。
@@ -128,6 +133,10 @@ func (a *App) oauthCallback(c *gin.Context) {
 	if code == "" {
 		code = strings.TrimSpace(c.Query("auth_code"))
 	}
+	// 钉钉新版 OAuth2 回调带的是 authCode。
+	if code == "" {
+		code = strings.TrimSpace(c.Query("authCode"))
+	}
 	state := strings.TrimSpace(c.Query("state"))
 	if code == "" || state == "" {
 		a.oauthFail(c, providerName, "", "回调缺少 code 或 state")
@@ -161,7 +170,20 @@ func (a *App) oauthCallback(c *gin.Context) {
 	}
 	cfg := oauth.Config{Provider: providerName, Fields: row.Config}
 	exchangeCtx, cancel := context.WithTimeout(c, 20*time.Second)
-	identity, err := impl.Exchange(exchangeCtx, cfg, secret, code, a.oauthCallbackURL(c, providerName))
+	var identity oauth.Identity
+	if sp, ok := impl.(oauth.SuiteTicketProvider); ok {
+		// 企业微信服务商应用：suite_ticket 由「指令回调 URL」推送入库。
+		ticket, terr := a.Store.GetOAuthSuiteTicket(exchangeCtx, cfg.Field("suite_id"))
+		if terr != nil {
+			cancel()
+			a.Store.MarkOAuthProviderHealth(c, providerName, false, "尚未收到 suite_ticket 推送")
+			a.oauthFail(c, providerName, stateRow.RedirectTo, "企业微信尚未推送 suite_ticket：请先在服务商后台把「指令回调URL」配置为 "+a.oauthQyweixinReceiveURL(c))
+			return
+		}
+		identity, err = sp.ExchangeWithSuiteTicket(exchangeCtx, cfg, secret, code, a.oauthCallbackURL(c, providerName), ticket)
+	} else {
+		identity, err = impl.Exchange(exchangeCtx, cfg, secret, code, a.oauthCallbackURL(c, providerName))
+	}
 	cancel()
 	if err != nil {
 		a.Store.MarkOAuthProviderHealth(c, providerName, false, err.Error())
@@ -263,6 +285,62 @@ func (a *App) oauthSecret(enc string) (oauth.Secret, error) {
 	return oauth.Secret(out), nil
 }
 
+// oauthQyweixinReceiveURL 企业微信「指令回调 URL」。
+func (a *App) oauthQyweixinReceiveURL(c *gin.Context) string {
+	return a.publicBaseURL(c) + "/api/v1/auth/qyweixin/receive"
+}
+
+// oauthQyweixinReceive 接收企业微信「指令回调」：
+// GET 是保存回调 URL 时的校验（解密 echostr 原样吐回），
+// POST 是 suite_ticket 推送（解密后入库，回 "success"）。
+// 该端点无需登录，安全性由 token 签名 + AES 解密保证。
+func (a *App) oauthQyweixinReceive(c *gin.Context) {
+	row, secretEnc, err := a.Store.GetOAuthProviderSecret(c, "qyweixin")
+	if err != nil {
+		c.String(http.StatusNotFound, "qyweixin provider not configured")
+		return
+	}
+	secret, err := a.oauthSecret(secretEnc)
+	if err != nil {
+		c.String(http.StatusInternalServerError, err.Error())
+		return
+	}
+	token, aesKey := secret.Get("token"), secret.Get("aes_key")
+	if token == "" || aesKey == "" {
+		c.String(http.StatusBadRequest, "qyweixin callback token/aes_key not configured")
+		return
+	}
+	msgSignature := c.Query("msg_signature")
+	timestamp := c.Query("timestamp")
+	nonce := c.Query("nonce")
+	if c.Request.Method == http.MethodGet {
+		plain, verr := oauth.QyweixinVerifyURL(token, aesKey, msgSignature, timestamp, nonce, c.Query("echostr"))
+		if verr != nil {
+			c.String(http.StatusBadRequest, verr.Error())
+			return
+		}
+		c.String(http.StatusOK, plain)
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(c.Request.Body, 1<<20))
+	if err != nil {
+		c.String(http.StatusBadRequest, "read body failed")
+		return
+	}
+	plain, derr := oauth.QyweixinDecryptMessage(token, aesKey, msgSignature, timestamp, nonce, string(body))
+	if derr != nil {
+		c.String(http.StatusBadRequest, derr.Error())
+		return
+	}
+	if ticket := oauth.QyweixinParseSuiteTicket(plain); ticket != "" {
+		if err := a.Store.SaveOAuthSuiteTicket(c, row.Config["suite_id"], ticket); err != nil {
+			c.String(http.StatusInternalServerError, "save suite_ticket failed")
+			return
+		}
+	}
+	c.String(http.StatusOK, "success")
+}
+
 // clientIPAddr 把客户端 IP 解析成 net.IP（CreateSession 要这个类型）。
 func clientIPAddr(c *gin.Context) net.IP {
 	return net.ParseIP(clientIP(c))
@@ -356,6 +434,9 @@ func (a *App) adminSaveOAuthProvider(c *gin.Context) {
 			"app_secret":      "unchanged",
 			"app_key":         "unchanged",
 			"app_private_key": "unchanged",
+			"secret":          "unchanged",
+			"token":           "unchanged",
+			"aes_key":         "unchanged",
 		}
 	}
 	if err := impl.Validate(oauth.Config{Provider: in.Provider, Fields: in.Config}, secret); err != nil {

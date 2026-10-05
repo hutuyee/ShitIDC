@@ -77,6 +77,37 @@ func httpPostForm(ctx context.Context, target string, form url.Values, headers m
 	return parsed, nil
 }
 
+// httpPostJSON 发 JSON 编码的 POST，把响应解析成 JSON 对象。
+// 钉钉与企业微信的 token 端点都用 JSON 请求体。
+func httpPostJSON(ctx context.Context, target string, payload any, headers map[string]string) (map[string]any, error) {
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, strings.NewReader(string(raw)))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+	resp, err := oauthHTTP.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrExchangeFailed, err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return nil, err
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("%w：平台响应不是合法 JSON（HTTP %d）：%s", ErrExchangeFailed, resp.StatusCode, truncateForLog(body))
+	}
+	return parsed, nil
+}
+
 // unwrapJSONP 剥掉 JSONP 包裹：QQ 的部分端点不认 fmt=json 时会返回
 // `callback( {...} );` 形态。剥不出来就原样返回。
 func unwrapJSONP(body string) string {

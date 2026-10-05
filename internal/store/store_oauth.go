@@ -35,6 +35,28 @@ type OAuthStateRow struct {
 
 // ---- 通道配置 ----
 
+// SaveOAuthSuiteTicket 记录企业微信推送的最新 suite_ticket（按 suite_id 覆盖）。
+func (s *Store) SaveOAuthSuiteTicket(ctx context.Context, suiteID, ticket string) error {
+	suiteID = strings.TrimSpace(suiteID)
+	ticket = strings.TrimSpace(ticket)
+	if suiteID == "" || ticket == "" {
+		return fmt.Errorf("suite_id 与 ticket 不能为空")
+	}
+	_, err := s.DB.Exec(ctx, `INSERT INTO oauth_suite_tickets(suite_id,ticket,updated_at) VALUES($1,$2,now())
+ON CONFLICT(suite_id) DO UPDATE SET ticket=excluded.ticket,updated_at=now()`, suiteID, ticket)
+	return err
+}
+
+// GetOAuthSuiteTicket 读取指定 suite_id 的最新 suite_ticket。
+func (s *Store) GetOAuthSuiteTicket(ctx context.Context, suiteID string) (string, error) {
+	var ticket string
+	err := s.DB.QueryRow(ctx, `SELECT ticket FROM oauth_suite_tickets WHERE suite_id=$1`, strings.TrimSpace(suiteID)).Scan(&ticket)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrNotFound
+	}
+	return ticket, err
+}
+
 // UpsertOAuthProvider 新增或更新一个第三方登录通道（按 provider 唯一）。
 func (s *Store) UpsertOAuthProvider(ctx context.Context, name, provider string, cfg map[string]string, secretEnc string, allowRegister bool) (OAuthProviderRow, error) {
 	provider = strings.ToLower(strings.TrimSpace(provider))

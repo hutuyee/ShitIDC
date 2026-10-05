@@ -289,6 +289,23 @@ const OAUTH_FIELD_SPECS: Record<string, FieldSpec[]> = {
     { key: 'app_id', label: 'APPID' },
     { key: 'app_private_key', label: '开发者私钥（PKCS8/base64）', secret: true, area: true },
   ],
+  dingtalk: [
+    { key: 'client_id', label: 'Client ID（原 AppKey）' },
+    { key: 'scope', label: 'Scope（默认 openid）', optional: true },
+    { key: 'client_secret', label: 'Client Secret（原 AppSecret）', secret: true },
+  ],
+  google: [
+    { key: 'client_id', label: 'Client ID' },
+    { key: 'scope', label: 'Scope（默认 profile email）', optional: true },
+    { key: 'client_secret', label: 'Client Secret', secret: true },
+  ],
+  qyweixin: [
+    { key: 'suite_id', label: 'SuiteID（服务商套件 ID）' },
+    { key: 'corp_id', label: 'CorpID（可选）', optional: true },
+    { key: 'secret', label: 'SuiteSecret', secret: true },
+    { key: 'token', label: '回调 Token', secret: true },
+    { key: 'aes_key', label: 'EncodingAESKey（43 位）', secret: true },
+  ],
 }
 const oauthProviders = ref<any[]>([])
 const oauthAvailable = ref<string[]>([])
@@ -300,6 +317,7 @@ const oauthSaving = ref(false)
 const oauthFieldSpecs = () => OAUTH_FIELD_SPECS[oauthForm.provider] || []
 const oauthChannelLabels: Record<string, string> = {
   github: 'GitHub', qq: 'QQ', weixin: '微信', weibo: '微博', alipay: '支付宝',
+  dingtalk: '钉钉', google: 'Google', qyweixin: '企业微信',
 }
 function pickOAuthProvider(p: string) {
   oauthForm.provider = p
@@ -608,6 +626,7 @@ onMounted(load)
             </label>
           </div>
           <div class="advanced-row"><div><b>允许自动注册</b><small>未绑定用户首次登录时自动建号（邮箱冲突会要求先绑定）</small></div><NCheckbox v-model:checked="oauthForm.allow_register" /></div>
+          <div v-if="oauthForm.provider === 'qyweixin'" class="security-note">企业微信服务商应用还需在后台把「指令回调URL」配置为 <b>{站点}/api/v1/auth/qyweixin/receive</b>，用于接收 suite_ticket（每 10 分钟推送一次）；未收到推送前登录会失败。</div>
           <NButton type="primary" :loading="oauthSaving" @click="saveOauthProvider">保存通道（凭据留空表示沿用已存值）</NButton>
           <div v-if="oauthProviders.length" class="stack">
             <div v-for="p in oauthProviders" :key="p.public_id || p.id" class="advanced-row">

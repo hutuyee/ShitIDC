@@ -70,6 +70,9 @@ func NewRouter(a *App) *gin.Engine {
 		v1.GET("/auth/oauth/providers", a.listOAuthProviders)
 		v1.GET("/auth/oauth/:provider/start", a.oauthStart)
 		v1.GET("/auth/oauth/:provider/callback", a.oauthCallback)
+		// 企业微信「指令回调 URL」：接收 suite_ticket（GET 校验 / POST 推送）
+		v1.GET("/auth/qyweixin/receive", a.oauthQyweixinReceive)
+		v1.POST("/auth/qyweixin/receive", a.oauthQyweixinReceive)
 		v1.POST("/auth/verify-email", a.verifyEmail)
 		v1.POST("/auth/login", a.login)
 		v1.POST("/auth/password/reset/request", a.requestPasswordReset)

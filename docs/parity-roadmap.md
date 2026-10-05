@@ -718,3 +718,17 @@ sms 7 个、oauth 4 个、certification 6 个）在 ShitIDC 都有对应实现�
 
 顺带修掉一个真实缺陷：后台短信/第三方登录面板按 `public_id` 找通道 ID，
 而接口序列化的是 `id`，导致「设为默认 / 停用 / 删除」实际传 `undefined` 全部 404。
+
+### 10.2 第三方登录补齐（`internal/oauth`）
+
+§8 只对齐了安装目录里的 4 个 oauth 插件；CBAP 插件包还带 3 个：
+
+| 通道 | 协议 | 关键点 |
+|---|---|---|
+| `dingtalk` 钉钉 | login.dingtalk.com oauth2 + api.dingtalk.com | 新版 OAuth2 回调参数是 `authCode`，接入层三种写法（code / auth_code / authCode）归一化；用户资料走 `x-acs-dingtalk-access-token` 头；unionId 透传 |
+| `google` Google | accounts.google.com oauth2 | access_type=offline + prompt=consent 与参考插件一致；主键用 userinfo 的 `id` 而不是邮箱 |
+| `qyweixin` 企业微信 | 服务商第三方应用（SuiteID + suite_ticket） | **需要「指令回调 URL」**：企业微信每 10 分钟推送 suite_ticket，本系统在 `/api/v1/auth/qyweixin/receive` 校验签名（sha1 排序拼接）、AES-256-CBC 解密后入库；登录回调再换 suite_access_token → `getuserinfo3rd`。没收到推送时明确提示去配置回调地址，而不是泛泛的「登录失败」 |
+
+加解密实现口径与官方 PHP 示例逐项对齐（43 位 EncodingAESKey、IV=密钥前 16 字节、
+PKCS7 块大小 32、明文结构 16 随机 + 4 长度 + msg + receiveid），并有
+「密文往返 + 篡改签名拒绝」的单元测试钉死。
