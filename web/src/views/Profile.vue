@@ -170,7 +170,90 @@ async function save() {
   }
 }
 
-onMounted(() => { load(); loadSessions(); loadTotp() })
+// ---- 手机绑定（短信验证码 purpose=bind）----
+const verifiedPhone = ref('')
+const phoneCodeSending = ref(false)
+const phoneCodeCountdown = ref(0)
+const bindPhoneOpen = ref(false)
+const bindPhone = ref({ phone: '', code: '' })
+const bindPhoneSaving = ref(false)
+
+async function loadPhone() {
+  try {
+    const d = dataOf<{ verified_phone: string; phone_verified: boolean }>(await api.get('/profile'))
+    verifiedPhone.value = d.verified_phone || ''
+  } catch { /* ignore */ }
+}
+
+async function sendBindCode() {
+  if (!/^1\d{10}$/.test(bindPhone.value.phone.trim())) { message.error('请填写 11 位大陆手机号'); return }
+  phoneCodeSending.value = true
+  try {
+    await api.post('/auth/sms-code', { phone: bindPhone.value.phone.trim(), purpose: 'bind' })
+    message.success('验证码已发送，10 分钟内有效')
+    phoneCodeCountdown.value = 60
+    const timer = setInterval(() => { phoneCodeCountdown.value -= 1; if (phoneCodeCountdown.value <= 0) clearInterval(timer) }, 1000)
+  } catch (e: any) {
+    message.error(e?.response?.data?.error?.message || '验证码发送失败')
+  } finally { phoneCodeSending.value = false }
+}
+
+async function submitBindPhone() {
+  bindPhoneSaving.value = true
+  try {
+    await api.post('/profile/phone', { phone: bindPhone.value.phone.trim(), code: bindPhone.value.code.trim() })
+    message.success('手机号绑定成功')
+    bindPhoneOpen.value = false
+    bindPhone.value = { phone: '', code: '' }
+    await loadPhone()
+  } catch (e: any) {
+    message.error(e?.response?.data?.error?.message || '绑定失败')
+  } finally { bindPhoneSaving.value = false }
+}
+
+async function unbindPhone() {
+  try {
+    await api.delete('/profile/phone')
+    message.success('已解绑手机号')
+    await loadPhone()
+  } catch (e: any) {
+    message.error(e?.response?.data?.error?.message || '解绑失败')
+  }
+}
+
+// ---- 第三方账号绑定 ----
+const oauthIdentities = ref<any[]>([])
+const oauthHasPassword = ref(true)
+const oauthProviders = ref<{ provider: string; name: string }[]>([])
+const oauthLabels: Record<string, string> = { github: 'GitHub', qq: 'QQ', weixin: '微信', weibo: '微博', alipay: '支付宝' }
+
+async function loadOauthIdentities() {
+  try {
+    const d = dataOf<{ identities: any[]; has_password: boolean }>(await api.get('/oauth/identities'))
+    oauthIdentities.value = d.identities || []
+    oauthHasPassword.value = d.has_password
+  } catch { /* ignore */ }
+  try {
+    oauthProviders.value = (await api.get('/auth/oauth/providers')).data?.data || []
+  } catch { oauthProviders.value = [] }
+}
+
+async function unbindOauth(provider: string) {
+  try {
+    await api.delete(`/oauth/identities/${provider}`)
+    message.success('已解绑')
+    await loadOauthIdentities()
+  } catch (e: any) {
+    message.error(e?.response?.data?.error?.message || '解绑失败')
+  }
+}
+
+// 已登录状态下发起授权 = 绑定（后端按会话判断），绑定完成跳回本页。
+function bindOauthStart(provider: string) {
+  window.location.href = `/api/v1/auth/oauth/${encodeURIComponent(provider)}/start?redirect_to=${encodeURIComponent('/profile')}`
+}
+
+onMounted(() => { load(); loadSessions(); loadTotp(); loadPhone(); loadOauthIdentities() })
 </script>
 
 <template>
@@ -246,6 +329,29 @@ onMounted(() => { load(); loadSessions(); loadTotp() })
         </div>
         <div class="security-note">修改密码后会吊销全部登录会话（含本机），需要重新登录；忘记密码可在登录页使用「找回密码」。</div>
 
+        <div class="panel-title-row"><div><h2>手机绑定</h2><span>短信验证码绑定，绑定后可用于找回与通知</span></div></div>
+        <div class="row" style="gap:8px;flex-wrap:wrap">
+          <template v-if="verifiedPhone">
+            <NTag type="success" round>已绑定 {{ verifiedPhone.slice(0, 3) }}****{{ verifiedPhone.slice(-4) }}</NTag>
+            <NButton size="small" secondary @click="unbindPhone">解绑</NButton>
+          </template>
+          <NButton v-else secondary type="primary" @click="bindPhoneOpen = true; bindPhone = { phone: '', code: '' }">绑定手机号</NButton>
+        </div>
+
+        <div class="panel-title-row"><div><h2>第三方账号</h2><span>绑定后可用第三方账号直接登录</span></div></div>
+        <div class="stack" style="gap:6px">
+          <div v-for="i in oauthIdentities" :key="i.provider + i.subject" class="mini-row">
+            <span class="muted">{{ oauthLabels[i.provider] || i.provider }}</span>
+            <span class="row" style="gap:8px"><b>{{ i.nickname || i.subject }}</b><NButton size="tiny" tertiary type="error" @click="unbindOauth(i.provider)">解绑</NButton></span>
+          </div>
+          <div class="row" style="gap:8px;flex-wrap:wrap">
+            <NButton v-for="p in oauthProviders.filter(x => !oauthIdentities.some(i => i.provider === x.provider))" :key="p.provider" size="small" secondary @click="bindOauthStart(p.provider)">
+              绑定 {{ oauthLabels[p.provider] || p.name || p.provider }}
+            </NButton>
+          </div>
+          <div v-if="!oauthHasPassword" class="security-note">当前账号没有密码（由第三方登录创建）。解绑最后一个第三方账号前请先设置密码，否则账号将无法登录。</div>
+        </div>
+
         <div class="panel-title-row"><div><h2>登录设备</h2><span>近期的活跃会话</span></div><NButton size="small" tertiary @click="revokeOthers">下线其他设备</NButton></div>
         <div class="device-list">
           <div v-for="s in sessions" :key="s.id" class="device-row">
@@ -296,6 +402,20 @@ onMounted(() => { load(); loadSessions(); loadTotp() })
         <NInput v-model:value="totpPassword" type="password" show-password-on="click" placeholder="当前密码" />
         <NInput v-model:value="totpCode" placeholder="6 位验证码" maxlength="6" />
         <NButton type="error" block :loading="totpSaving" @click="doDisable">确认关闭</NButton>
+      </div>
+    </NModal>
+
+    <NModal v-model:show="bindPhoneOpen" preset="card" title="绑定手机号" style="width:min(420px,92vw)">
+      <div class="stack">
+        <NInput v-model:value="bindPhone.phone" placeholder="11 位手机号" maxlength="11" />
+        <div class="row" style="gap:8px">
+          <NInput v-model:value="bindPhone.code" placeholder="短信验证码" maxlength="6" />
+          <NButton :disabled="phoneCodeCountdown > 0 || phoneCodeSending" :loading="phoneCodeSending" @click="sendBindCode">
+            {{ phoneCodeCountdown > 0 ? `${phoneCodeCountdown}s` : '获取验证码' }}
+          </NButton>
+        </div>
+        <NButton type="primary" block :loading="bindPhoneSaving" @click="submitBindPhone">确认绑定</NButton>
+        <p class="muted" style="margin:0;font-size:12px">发送验证码有频率限制（1 分钟 1 条 / 1 天 10 条）；该手机号不能已被其它账号绑定。</p>
       </div>
     </NModal>
   </div>

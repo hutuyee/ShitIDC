@@ -57,16 +57,22 @@ const typeOptions = [
   { label: '智简魔方财务（上游）', value: 'magiccube' },
   { label: 'Proxmox VE', value: 'proxmox' },
   { label: 'Virtualizor', value: 'virtualizor' },
+  { label: '宝塔面板', value: 'baota' },
+  { label: 'NOKVM 虚拟化', value: 'nokvm' },
+  { label: 'Kangle 虚拟主机（未来高级版）', value: 'wlkangle' },
 ]
-const isInfra = computed(() => form.value.provider_type === 'proxmox' || form.value.provider_type === 'virtualizor')
+const isInfra = computed(() => ['proxmox', 'virtualizor', 'baota', 'nokvm', 'wlkangle'].includes(form.value.provider_type))
 
 // 基础设施 Provider 的默认配置模板
 const infraTemplates: Record<string, string> = {
   proxmox: JSON.stringify({ node: 'pve1', api_token_id: 'root@pam!shitidc', vm_type: 'lxc', ostemplate: 'local:vztmpl/debian-12-standard_12.2-1_amd64.tar.zst', storage: 'local-lvm', disk_gb: 10, cores: 1, memory: 512, bridge: 'vmbr0', password: '', allow_private: false }, null, 2),
   virtualizor: JSON.stringify({ serverid: '0', plan: '', osid: '', space_gb: 10, ram_mb: 512, cores: 1, bandwidth_gb: 0, allow_private: false }, null, 2),
+  baota: JSON.stringify({ site_type: 'PHP', php_version: '00', site_path: '/www/wwwroot', db: false, allow_private: false }, null, 2),
+  nokvm: JSON.stringify({ allow_private: false }, null, 2),
+  wlkangle: JSON.stringify({ allow_private: false }, null, 2),
 }
 function onTypeChange(v: string) {
-  if (v === 'proxmox' || v === 'virtualizor') form.value.config_json = infraTemplates[v] || '{}'
+  if (infraTemplates[v]) form.value.config_json = infraTemplates[v]
 }
 
 function buildPayload() {

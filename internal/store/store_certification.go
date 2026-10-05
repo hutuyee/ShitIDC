@@ -259,6 +259,9 @@ type CertificationProvider struct {
 	Config    map[string]string `json:"config"`
 	Active    bool              `json:"active"`
 	IsDefault bool              `json:"is_default"`
+	HasSecret bool              `json:"has_secret"`
+	LastOKAt  *time.Time        `json:"last_ok_at,omitempty"`
+	LastError string            `json:"last_error"`
 }
 
 // ActiveCertificationProvider 返回默认启用的实名通道及其加密凭据。
@@ -289,4 +292,96 @@ func (s *Store) MarkCertificationProviderHealth(ctx context.Context, publicID st
 		return
 	}
 	_, _ = s.DB.Exec(ctx, `UPDATE certification_providers SET last_error=$2,updated_at=now() WHERE public_id=$1`, publicID, errText)
+}
+
+// ---- 实名通道管理（管理端）----
+
+// CreateCertificationProvider 新增一条实名通道；secretEnc 是加密后的凭据 JSON。
+func (s *Store) CreateCertificationProvider(ctx context.Context, name, provider string, cfg map[string]string, secretEnc string, isDefault bool) (CertificationProvider, error) {
+	if cfg == nil {
+		cfg = map[string]string{}
+	}
+	raw, err := json.Marshal(cfg)
+	if err != nil {
+		return CertificationProvider{}, err
+	}
+	tx, err := s.DB.Begin(ctx)
+	if err != nil {
+		return CertificationProvider{}, err
+	}
+	defer tx.Rollback(ctx)
+	if isDefault {
+		// 唯一索引只允许一个默认通道，所以先把旧的取消掉。
+		if _, err := tx.Exec(ctx, `UPDATE certification_providers SET is_default=FALSE WHERE is_default=TRUE`); err != nil {
+			return CertificationProvider{}, err
+		}
+	}
+	var v CertificationProvider
+	var cfgRaw []byte
+	err = tx.QueryRow(ctx, `INSERT INTO certification_providers(name,provider,config,secret_encrypted,is_default)
+VALUES($1,$2,$3::jsonb,$4,$5)
+RETURNING public_id::text,name,provider,config,active,is_default`,
+		strings.TrimSpace(name), strings.ToLower(strings.TrimSpace(provider)), string(raw), secretEnc, isDefault).
+		Scan(&v.PublicID, &v.Name, &v.Provider, &cfgRaw, &v.Active, &v.IsDefault)
+	if err != nil {
+		return CertificationProvider{}, err
+	}
+	_ = json.Unmarshal(cfgRaw, &v.Config)
+	if err := tx.Commit(ctx); err != nil {
+		return CertificationProvider{}, err
+	}
+	return v, nil
+}
+
+// ListCertificationProviders 列出全部实名通道。
+func (s *Store) ListCertificationProviders(ctx context.Context) ([]CertificationProvider, error) {
+	rows, err := s.DB.Query(ctx, `SELECT public_id::text,name,provider,config,active,is_default,secret_encrypted<>'',last_ok_at,last_error
+FROM certification_providers ORDER BY is_default DESC, id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []CertificationProvider{}
+	for rows.Next() {
+		var v CertificationProvider
+		var cfgRaw []byte
+		if err := rows.Scan(&v.PublicID, &v.Name, &v.Provider, &cfgRaw, &v.Active, &v.IsDefault, &v.HasSecret, &v.LastOKAt, &v.LastError); err != nil {
+			return nil, err
+		}
+		_ = json.Unmarshal(cfgRaw, &v.Config)
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
+// DeleteCertificationProvider 删除一条实名通道。
+func (s *Store) DeleteCertificationProvider(ctx context.Context, publicID string) error {
+	tag, err := s.DB.Exec(ctx, `DELETE FROM certification_providers WHERE public_id=$1`, publicID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// SetCertificationProviderDefault 把某个通道设为默认（互斥）并激活。
+func (s *Store) SetCertificationProviderDefault(ctx context.Context, publicID string) error {
+	tx, err := s.DB.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `UPDATE certification_providers SET is_default=FALSE WHERE is_default=TRUE`); err != nil {
+		return err
+	}
+	tag, err := tx.Exec(ctx, `UPDATE certification_providers SET is_default=TRUE,active=TRUE,updated_at=now() WHERE public_id=$1`, publicID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return tx.Commit(ctx)
 }

@@ -22,8 +22,10 @@ import (
 	"github.com/hutuyee/ShitIDC/internal/provider/baota"
 	"github.com/hutuyee/ShitIDC/internal/provider/custom"
 	"github.com/hutuyee/ShitIDC/internal/provider/magiccube"
+	"github.com/hutuyee/ShitIDC/internal/provider/nokvm"
 	"github.com/hutuyee/ShitIDC/internal/provider/proxmox"
 	"github.com/hutuyee/ShitIDC/internal/provider/virtualizor"
+	"github.com/hutuyee/ShitIDC/internal/provider/wlkangle"
 	"github.com/hutuyee/ShitIDC/internal/queue"
 	"github.com/hutuyee/ShitIDC/internal/security"
 	"github.com/hutuyee/ShitIDC/internal/store"
@@ -89,6 +91,10 @@ func (w *worker) resolve(ctx context.Context, providerID int64, providerType str
 		return w.resolveVirtualizor(ctx, providerID)
 	case "baota":
 		return w.resolveBaota(ctx, providerID)
+	case "nokvm":
+		return w.resolveNokvm(ctx, providerID)
+	case "wlkangle":
+		return w.resolveWlkangle(ctx, providerID)
 	case "custom":
 		return w.resolveCustom(ctx, providerID)
 	default:
@@ -512,4 +518,36 @@ func (w *worker) resolveBaota(ctx context.Context, providerID int64) (provider.P
 	cfg.BaseURL = pv.BaseURL
 	cfg.APIKey = secret
 	return baota.New(cfg)
+}
+
+// resolveNokvm builds the NOKVM client: secret = 面板 API token。
+func (w *worker) resolveNokvm(ctx context.Context, providerID int64) (provider.Provider, error) {
+	pv, secret, err := w.providerSecret(ctx, providerID)
+	if err != nil {
+		return nil, err
+	}
+	b, _ := json.Marshal(pv.Config)
+	var cfg nokvm.Config
+	if err := json.Unmarshal(b, &cfg); err != nil {
+		return nil, fmt.Errorf("nokvm config decode: %w", err)
+	}
+	cfg.BaseURL = pv.BaseURL
+	cfg.Token = secret
+	return nokvm.New(cfg)
+}
+
+// resolveWlkangle builds the 未来 kangle 客户端: secret = 安全码（accesshash）。
+func (w *worker) resolveWlkangle(ctx context.Context, providerID int64) (provider.Provider, error) {
+	pv, secret, err := w.providerSecret(ctx, providerID)
+	if err != nil {
+		return nil, err
+	}
+	b, _ := json.Marshal(pv.Config)
+	var cfg wlkangle.Config
+	if err := json.Unmarshal(b, &cfg); err != nil {
+		return nil, fmt.Errorf("wlkangle config decode: %w", err)
+	}
+	cfg.BaseURL = pv.BaseURL
+	cfg.Token = secret
+	return wlkangle.New(cfg)
 }

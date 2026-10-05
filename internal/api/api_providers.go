@@ -12,8 +12,10 @@ import (
 	"github.com/hutuyee/ShitIDC/internal/provider/baota"
 	"github.com/hutuyee/ShitIDC/internal/provider/custom"
 	"github.com/hutuyee/ShitIDC/internal/provider/magiccube"
+	"github.com/hutuyee/ShitIDC/internal/provider/nokvm"
 	"github.com/hutuyee/ShitIDC/internal/provider/proxmox"
 	"github.com/hutuyee/ShitIDC/internal/provider/virtualizor"
+	"github.com/hutuyee/ShitIDC/internal/provider/wlkangle"
 
 	"github.com/hutuyee/ShitIDC/internal/httpx"
 	"github.com/hutuyee/ShitIDC/internal/model"
@@ -71,6 +73,24 @@ func (a *App) resolveProviderClient(ctx context.Context, pv model.Provider, secr
 		}
 		cfg.APIKey, cfg.APIPass = keys.APIKey, keys.APIPass
 		return virtualizor.New(cfg)
+	case "nokvm":
+		b, _ := json.Marshal(pv.Config)
+		var cfg nokvm.Config
+		if err := json.Unmarshal(b, &cfg); err != nil {
+			return nil, fmt.Errorf("nokvm config decode: %w", err)
+		}
+		cfg.BaseURL = pv.BaseURL
+		cfg.Token = secret
+		return nokvm.New(cfg)
+	case "wlkangle":
+		b, _ := json.Marshal(pv.Config)
+		var cfg wlkangle.Config
+		if err := json.Unmarshal(b, &cfg); err != nil {
+			return nil, fmt.Errorf("wlkangle config decode: %w", err)
+		}
+		cfg.BaseURL = pv.BaseURL
+		cfg.Token = secret
+		return wlkangle.New(cfg)
 	case "custom":
 		// 声明式上游（魔方插件导入产物）：规格在 config.spec，密钥即接口 token。
 		if _, ok := pv.Config["spec"]; !ok {

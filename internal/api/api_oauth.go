@@ -124,6 +124,10 @@ func (a *App) oauthCallback(c *gin.Context) {
 		return
 	}
 	code := strings.TrimSpace(c.Query("code"))
+	// 支付宝回调带的是 auth_code，语义与 code 相同。
+	if code == "" {
+		code = strings.TrimSpace(c.Query("auth_code"))
+	}
 	state := strings.TrimSpace(c.Query("state"))
 	if code == "" || state == "" {
 		a.oauthFail(c, providerName, "", "回调缺少 code 或 state")
@@ -345,8 +349,14 @@ func (a *App) adminSaveOAuthProvider(c *gin.Context) {
 	secret := oauth.Secret(in.Secret)
 	// 保存前静态校验：少填字段比登录时才发现更好。
 	// 密钥留空时用占位值跳过校验（表示沿用已存的密钥）。
+	// 各通道的密钥键名都列在这里，避免某个通道更新配置时被自家校验卡住。
 	if len(secret) == 0 {
-		secret = oauth.Secret{"client_secret": "unchanged", "app_secret": "unchanged", "app_key": "unchanged"}
+		secret = oauth.Secret{
+			"client_secret":   "unchanged",
+			"app_secret":      "unchanged",
+			"app_key":         "unchanged",
+			"app_private_key": "unchanged",
+		}
 	}
 	if err := impl.Validate(oauth.Config{Provider: in.Provider, Fields: in.Config}, secret); err != nil {
 		httpx.Fail(c, 400, "OAUTH_PROVIDER_INVALID", err.Error())

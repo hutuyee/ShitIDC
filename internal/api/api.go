@@ -147,6 +147,9 @@ func NewRouter(a *App) *gin.Engine {
 			// 第三方登录绑定管理
 			authed.GET("/oauth/identities", a.require("profile.read"), a.myOAuthIdentities)
 			authed.DELETE("/oauth/identities/:provider", a.require("profile.update"), a.csrf(), a.unbindOAuthIdentity)
+			// 手机号绑定（短信验证码 purpose=bind 的落地处）
+			authed.POST("/profile/phone", a.require("profile.update"), a.csrf(), a.bindPhone)
+			authed.DELETE("/profile/phone", a.require("profile.update"), a.csrf(), a.unbindPhone)
 			// 实名认证
 			authed.GET("/certification", a.require("profile.read"), a.myCertification)
 			authed.POST("/certification", a.require("profile.update"), a.csrf(), a.submitCertification)
@@ -308,6 +311,11 @@ func (a *App) registerAdminRoutes(g *gin.RouterGroup) {
 	g.GET("/certifications", a.require("user.manage"), a.adminListCertifications)
 	g.POST("/certifications/:id/review", a.require("user.manage"), a.csrf(), a.adminReviewCertification)
 	g.POST("/certification/required", a.require("settings.manage"), a.csrf(), a.adminSetCertificationRequired)
+	// 实名核验通道管理（manual / alitwo 等）
+	g.GET("/certification-providers", a.require("settings.manage"), a.adminListCertificationProviders)
+	g.POST("/certification-providers", a.require("settings.manage"), a.csrf(), a.adminCreateCertificationProvider)
+	g.POST("/certification-providers/:id/default", a.require("settings.manage"), a.csrf(), a.adminSetDefaultCertificationProvider)
+	g.DELETE("/certification-providers/:id", a.require("settings.manage"), a.csrf(), a.adminDeleteCertificationProvider)
 	// 客户组按产品差异定价
 	g.GET("/user-groups/:id/prices", a.require("user.manage"), a.adminListUserProductPrices)
 	g.POST("/user-groups/:id/prices", a.require("user.manage"), a.csrf(), a.adminSetUserProductPrice)

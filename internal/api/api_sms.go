@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -188,6 +189,49 @@ func errText(err error) string {
 		return ""
 	}
 	return err.Error()
+}
+
+// ---- 绑定手机号（短信验证码 purpose=bind 的落地处）----
+
+// bindPhone 用短信验证码把手机号绑到当前账号。
+// 验证码消费与绑定在同一请求内完成：验证码错误时绑定不发生。
+func (a *App) bindPhone(c *gin.Context) {
+	pr, _ := getPrincipal(c)
+	var in struct {
+		Phone string `json:"phone"`
+		Code  string `json:"code"`
+	}
+	if err := c.ShouldBindJSON(&in); err != nil {
+		httpx.Fail(c, 400, "INVALID_REQUEST", "请求格式错误")
+		return
+	}
+	phone := normalizeSMSCode(in.Phone)
+	if phone == "" {
+		httpx.Fail(c, 400, "INVALID_PHONE", "手机号格式错误")
+		return
+	}
+	if err := a.Store.ConsumeSmsCode(c, phone, "bind", security.SHA256Hex(strings.TrimSpace(in.Code))); err != nil {
+		httpx.Fail(c, 400, mapCodeError(err), "验证码错误或已过期")
+		return
+	}
+	if err := a.Store.SetUserPhone(c, pr.User.ID, phone, true); err != nil {
+		// 唯一索引冲突（手机号已被其它账号绑定）会带出人话提示。
+		httpx.Fail(c, 400, "PHONE_BIND_FAILED", err.Error())
+		return
+	}
+	_ = a.Store.Audit(c, pr.User.ID, "profile.phone_bind", "user", fmt.Sprintf("%d", pr.User.ID), c.GetString("request_id"), clientIP(c), c.Request.UserAgent(), nil, nil)
+	httpx.OK(c, 200, map[string]any{"ok": true, "phone": phone})
+}
+
+// unbindPhone 解绑手机号。解绑是自由的——号码换主人时用户不该等管理员。
+func (a *App) unbindPhone(c *gin.Context) {
+	pr, _ := getPrincipal(c)
+	if err := a.Store.SetUserPhone(c, pr.User.ID, "", false); err != nil {
+		httpx.Fail(c, 400, "PHONE_UNBIND_FAILED", err.Error())
+		return
+	}
+	_ = a.Store.Audit(c, pr.User.ID, "profile.phone_unbind", "user", fmt.Sprintf("%d", pr.User.ID), c.GetString("request_id"), clientIP(c), c.Request.UserAgent(), nil, nil)
+	httpx.OK(c, 200, map[string]bool{"ok": true})
 }
 
 // ---- 管理端：短信通道 ----

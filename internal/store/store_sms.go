@@ -292,3 +292,16 @@ func (s *Store) SetUserPhone(ctx context.Context, userID int64, phone string, ve
 	}
 	return nil
 }
+
+// GetUserVerifiedPhone 返回用户已验证的手机号与状态。
+// 与 user_profiles.phone（联系方式，自由文本）不同，这是绑定在账号上的
+// 唯一手机号（migrations/015 的唯一索引）。
+func (s *Store) GetUserVerifiedPhone(ctx context.Context, userID int64) (string, bool, error) {
+	var phone string
+	var verified bool
+	err := s.DB.QueryRow(ctx, `SELECT phone,phone_verified FROM users WHERE id=$1`, userID).Scan(&phone, &verified)
+	if err != nil {
+		return "", false, err
+	}
+	return phone, verified, nil
+}

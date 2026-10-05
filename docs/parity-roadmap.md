@@ -14,8 +14,8 @@ Go 全栈开源。
 | 扩展方式 | 把 PHP 插件丢进目录，与主程序**同进程同权限** | Go 接口 + 编译期注册；沙箱化 WASM 扩展用于不可信代码 |
 | 上游对接 | `public/plugins/servers/<标识>/<标识>.php`，函数式约定 | `internal/provider.Provider` 接口 + `cmd/worker` 统一分发 |
 | 支付 | `public/plugins/gateways/`，14 个 | `internal/payment` 注册表：易支付 / 支付宝 / Stripe / 微信支付 / PayPal / USDT |
-| 短信 | `public/plugins/sms/`，6 个 | `internal/sms` 注册表：阿里云（抽象就绪，其余按同一接口接） |
-| 第三方登录 | `public/plugins/oauth/`，7 个 | `internal/oauth` 注册表：GitHub（框架就绪，其余按同一接口接） |
+| 短信 | `public/plugins/sms/`，7 个 | `internal/sms` 注册表：阿里云 / 腾讯云 / 赛邮 / 华为云 / 短信宝 / 通用 HTTP |
+| 第三方登录 | `public/plugins/oauth/`，4 个 | `internal/oauth` 注册表：GitHub / QQ / 微信 / 微博 / 支付宝 |
 | 实名/验证码 | `certification` 6 个、`captcha` 2 个 | 内置图形验证码（纯标准库）；实名认证已补齐（三方核验 + 人工审核通道） |
 
 **"把插件换成 Go"在这里的准确含义**：魔方一个 server 插件对应 ShitIDC 一个
@@ -420,16 +420,16 @@ order_items.config_cents/setup_cents/config_selections/custom_fields
 
 ## 4. 仍未对齐的差距
 
-剩下的都是「渠道数量」与「规模化运营」两类，核心闭环（卖货 → 收款 → 开通 → 续费 →
-升降级 → 退款 → 计费）已经全部打通。已完成的项目见下一节，避免重复排查。
+魔方参考源里**可读**的插件协议已全部用 Go 对齐（见 §9）。剩下的只有两类，
+且都有明确的客观障碍：
 
-| 差距 | 魔方对应 | 说明 |
+| 差距 | 障碍 | 说明 |
 |---|---|---|
-| 更多第三方登录通道 | `oauth` 7 个 | 框架与 GitHub 已就绪，微信/QQ/微博/支付宝按同一接口接 |
-| 更多支付渠道 | `Goallpay*` `OcgcPay` | 已有易支付/支付宝/Stripe/微信/PayPal/USDT |
-| 更多短信通道 | `Qcloudsms` `Submail` `Officesms` 等 | 抽象与阿里云已就绪，其余按同一接口接 |
-| 域名注册类 Provider | `WestDomain` `ZgsjDomain` | 宝塔已补，其余面板按同样模式接 |
- 目前全部预付费 |
+| 域名注册类 Provider（`WestDomain` `ZgsjDomain`） | 参考源 **ionCube 全加密** | 协议不可读。按本项目「识别不了的不编造」原则（§7.2），不凭记忆猜测协议——猜测出来的域名 Provider 直接操作真实域名与续费金额，错一步就是真实损失 |
+| DirectAdmin / MfCloud 系列（`DirectAdmin` `MfCloudDisk` 等） | 参考源 ionCube 全加密 | 同上；魔方 3.7.6 明文包里只有 bthosts/nokvm/proxmoxve/wlkanglepro 四个模块 |
+
+核心闭环（卖货 → 收款 → 开通 → 续费 → 升降级 → 退款 → 计费）已经全部打通。
+已完成的项目见下一节，避免重复排查。
 
 ## 4.5 已完成清单
 
@@ -458,6 +458,11 @@ order_items.config_cents/setup_cents/config_selections/custom_fields
 - 接口分组容量分配（`internal/store/store_provider_groups.go`）—— 三种策略
 - 购物车多商品结算（`internal/store/store_cart.go`）—— 价格实时重算 + 整批原子付款
 - 后付费（`internal/store/store_postpaid.go`）—— 显式授信 + 并发不超额度 + 变更留痕
+- 第三方登录通道补齐：QQ / 微信 / 微博 / 支付宝（`internal/oauth`）
+- 短信通道补齐：腾讯云 / 赛邮 / 华为云 / 短信宝 / 通用 HTTP（`internal/sms`）
+- 支付网关补齐：虎皮椒 / GoAllPay / OCGC（`internal/payment`，见 §9）
+- 基础设施 Provider 补齐：NOKVM / kangle（`internal/provider`，见 §9）
+- 实名核验通道补齐：阿里云二要素（`internal/certification/alitwo.go`，见 §9）
 
 ---
 
@@ -578,3 +583,109 @@ order_items.config_cents/setup_cents/config_selections/custom_fields
   （参考源码仅用于冒烟验证，不入仓库；单测用按契约文档撰写的原创夹具）。
 
 详见 `docs/zjmf-plugin-import.md`，含模板变量速查与诚实的限制清单。
+
+---
+
+## 8. 短信/登录渠道补齐与账号手机号（本轮补齐）
+
+对应魔方 `public/plugins/sms/` 全部 7 个通道里的 6 个（idcsmart/idcsmartpro 是
+厂商自营付费通道，用「通用 HTTP」覆盖同类自建网关），以及 `public/plugins/oauth/`
+的全部 4 个通道。至此 §4 的「渠道数量」差距只剩支付与域名注册两类。
+
+### 8.1 短信通道（`internal/sms`，全部纯标准库）
+
+| 通道 | 协议 | 关键点 |
+|---|---|---|
+| `qcloudsms` 腾讯云 | SMS 2021-01-11，API 3.0 | **TC3-HMAC-SHA256 签名手写**（kDate→kService→kSigning 逐层派生），测试向量独立用 Python 复算钉死 |
+| `submail` 赛邮 | message/send.json 表单 | 国内/国际按号码自动分流到两个端点；`signature=appkey` 免签名模式 |
+| `huaweicloud` 华为云 | batchSendSms/v1 | **WSSE UsernameToken 头**：PasswordDigest 是 `Base64(SHA256摘要的十六进制串)`，不是 `Base64(原始摘要)`——与魔方 PHP 插件 `base64_encode(hash('sha256',...))` 逐字节一致，两种写法差一个就是「签名错误」，向量测试钉死 |
+| `smsbao` 短信宝 | GET + 密码 MD5 | 状态码表与插件 statusStr 一致（"0" 成功，其余翻成人话） |
+| `generic` 通用 HTTP | 模板化请求 | `{{phone}}/{{code}}/{{content}}/{{secret:KEY}}` 占位符 + `success_keyword` 判据；**未引用的凭据绝不进请求体**，遗留占位符清空 |
+
+共同设计：
+
+- **国内/国际自动分流**：11 位以 1 开头视为大陆号（腾讯云/华为云补 `+86` 成 E.164），
+  其余视为已带国家码；国际子通道凭据缺失时**明确报错**，而不是拿国内凭据硬发。
+- 密钥（Secret）与非敏感配置（Fields）继续分库存储，凭据加密入库。
+
+### 8.2 第三方登录通道（`internal/oauth`）
+
+| 通道 | 授权页 | 说明 |
+|---|---|---|
+| `qq` | graph.qq.com | token 默认返回 `a=1&b=2` 文本（JSONP 形态也有兜底）；`ret` 是数字，必须按数字判 0，按字符串判会漏掉业务错误（测试抓出来的） |
+| `weixin` | open.weixin.qq.com/qrconnect | 四个通道里唯一回 `unionid` 的，透传到 Identity 供跨应用识别 |
+| `weibo` | api.weibo.com | **修掉魔方参考实现的一个错误**：它把 access_token 当 openid 回传，token 一换代 subject 就漂移、绑定关系失效——正确主键是响应里的 `uid`，测试断言 subject ≠ token |
+| `alipay` | openauth.alipay.com | 回调参数是 `auth_code`（API 层兼容读取）；网关协议与网站支付同构，**签名/密钥解析抽到 `internal/alipaykit` 共享**，支付与登录不再各有一份 |
+
+支付宝响应不做本地验签（与参考实现一致，TLS 已保证传输安全），网关地址固定官方
+HTTPS 端点、测试可覆盖。
+
+### 8.3 顺带修掉的后端缺陷
+
+- **更新支付宝登录通道会被自家校验卡死**：管理端保存时密钥留空表示沿用旧值，
+  占位值映射里漏了 `app_private_key`，导致不改私钥就存不了其它配置。
+- **绑定手机号接口缺失**：`SetUserPhone` 一直存在但没有任何 API 调用它——
+  短信验证码的 `bind` 用途悬空。补上 `POST/DELETE /profile/phone`（验证码消费
+  与绑定同请求内完成，`users.phone` 唯一索引挡住一号多绑）。
+
+### 8.4 界面（接口早已就绪，本轮补编辑器）
+
+- **管理端 → 系统设置**：新增「短信通道」「第三方登录」两个面板。每个通道的
+  表单字段由前端元数据描述（与各通道 `Validate` 必填项一一对应），凭据字段
+  密码框渲染；短信面板带最近 20 条发送流水（排查盗刷）。
+- **登录页**：启用中的通道自动出现第三方登录按钮（拉 `/auth/oauth/providers`），
+  回调失败时后端带回的 `?oauth_error=` 以消息条展示。
+- **个人中心**：手机号绑定/解绑（带发送倒计时），第三方账号绑定列表与解绑；
+  「没有密码的 OAuth 账号」在解绑最后一个第三方账号前有明确提示。
+
+---
+
+## 9. 支付网关 / 基础设施 Provider / 实名通道收尾（本轮补齐）
+
+魔方参考源里剩余的**明文**插件协议全部对齐完毕。这一轮之后，魔方插件生态里
+所有协议可读的通道在 ShitIDC 都有 Go 原生实现。
+
+### 9.1 支付网关（`internal/payment`）
+
+| 网关 | 协议 | 关键点 |
+|---|---|---|
+| `xunhupay` 虎皮椒 | `payment/do.html`，MD5 签名（secret 直接拼在串尾，无分隔符） | 参考实现响应验签写成 `$hash !== $hash`（恒 false，验签形同虚设），Go 实现真校验；金额走分→两位小数字符串的整数换算；一个方法覆盖 alipay/wechat 两个渠道（wxpay 自动归一化） |
+| `goallpay` GoAllPay | AllPay v5 通用接口 `/api/createorder`，SHA256 签名 | 三个魔方插件（Ali/Wechat/Unionpay）收敛为一个方法，paymentMethod 映射 alipay_cn / wechat_pay / unionpay；detailInfo 是 base64 的商品 JSON；userIP 等信息字段不在 Prepared 里，签名规则排除空值故直接省略 |
+| `ocgcpay` OCGC（酷云） | 两步会话式：`msc/user/login` → `msc/txn/request` | 请求体是 **JSON 数组包裹单对象且字段顺序固定**（签名覆盖原始字节，Go 用声明序 struct 保证）；x-apsignature 为 RSA 签名大写 hex，算法与参考实现一致（PHP openssl_sign 默认 SHA1）；响应验签覆盖**含方括号的原始字节**；回调 body+sign 形态。qrcodeUrl 非 http 时明确报错——本系统的支付是整页跳转，二维码图地址无法承载 |
+
+三个网关都接入了既有的 `VerifyNotify` → 金额比对 → 原路记账闭环，测试对着
+假服务器跑全流程（下单参数、签名复算、响应验签、回调篡改拒绝）。
+
+### 9.2 基础设施 Provider（`internal/provider`）
+
+| Provider | 协议来源 | 关键点 |
+|---|---|---|
+| `nokvm` NOKVM 虚拟化 | `servers/nokvm/nokvm.php`（明文） | 签名与宝塔同源但排序的是**值**（time/random/token 字符串排序后拼接）；开通 `/api/virtual`（expire_time 固定 2999，到期由本系统回收）、暂停/恢复/删除/改配（PUT `/api/virtual/{id}`，只提交变化的键）；主 IP 按 `ip_address_id` 分流；win 镜像用户名 administrator |
+| `wlkangle` kangle 虚拟主机 | `servers/wlkanglepro/wlkanglepro.php`（明文） | `s = md5(a + token + r)`；开通 add_vh（init=1，产品ID方式只带 product_id）、改配 add_vh+edit=1、暂停 update_vh status=1/0、删除 del_vh；**续费=解除暂停**（与参考实现 _Renew 一致） |
+
+两者都实现了完整 `Provider` 接口并接入 worker 与管理端分发器；配置模板
+（含此前漏掉的宝塔）已加入后台下拉。
+
+### 9.3 实名核验通道（`internal/certification`）
+
+- **`alitwo` 阿里云身份证二要素**（对应魔方 `certification/alitwo`）：阿里云云市场
+  简单认证模式，`Authorization: APPCODE` 头 + GET `?idCard=&name=`；
+  `status=="01"` 判一致，失败 msg 带出，traceId 作为凭证。
+- 顺带补上了**实名通道管理接口**（此前 `certification_providers` 表与健康度
+  追踪都在、但没有任何 API 能创建通道——同绑定手机号的缺口模式）：
+  `GET/POST /admin/certification-providers`、`:id/default`、`:id/delete`，
+  凭据加密入库；后台设置页新增「实名核验通道」面板。
+
+### 9.4 明确不做的部分（及原因）
+
+魔方 CBAP 插件包里的 `WestDomain` / `ZgsjDomain`（域名注册）与
+`DirectAdmin` / `MfCloudDisk` / `MfCloudIp` / `MfDcimCabinet` 全部是
+**ionCube 加密**的——协议不可读。这些通道涉及真实域名与扣费操作，
+凭记忆猜测协议的风险远大于收益；按 §7.2「识别不了的不编造」原则明确跳过，
+将来拿到明文参考或官方文档时按同样的 Provider 模式接入即可。
+
+### 9.5 收尾状态
+
+至此魔方参考源中协议可读的全部插件类型（gateway 14 个、server 4 个、
+sms 7 个、oauth 4 个、certification 6 个）在 ShitIDC 都有对应实现或等价能力。
+剩余差距只有 §4 表里两类 ionCube 加密的模块。

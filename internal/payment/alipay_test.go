@@ -15,6 +15,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/hutuyee/ShitIDC/internal/alipaykit"
 )
 
 // alipayTestSecrets generates an in-test RSA key pair and returns the
@@ -43,7 +45,7 @@ func alipayTestSecrets(t *testing.T) (string, *rsa.PrivateKey) {
 // would: canonical string -> RSA2 -> base64, then appends sign/sign_type.
 func alipaySignCallback(t *testing.T, key *rsa.PrivateKey, values url.Values) url.Values {
 	t.Helper()
-	sign, err := alipaySignRSA2(key, alipaySignContent(values))
+	sign, err := alipaykit.SignRSA2(key, alipaykit.SignContent(values))
 	if err != nil {
 		t.Fatal(err)
 	}

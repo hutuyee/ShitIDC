@@ -13,7 +13,14 @@ const methodOptions = ref([{ label: '易支付（epay）', value: 'epay' }])
 async function loadSupported() {
   try {
     const methods = dataOf<{ methods: string[] }>(await api.get('/admin/payment-methods/supported')).methods || []
-    methodOptions.value = methods.map((m: string) => ({ label: m === 'epay' ? '易支付（epay）' : m, value: m }))
+    const methodLabels: Record<string, string> = {
+      epay: '易支付（epay）', alipay: '支付宝官方（alipay）', stripe: 'Stripe',
+      wechatpay: '微信支付官方（wechatpay）', paypal: 'PayPal', usdt: 'USDT（Epusdt）',
+      xunhupay: '虎皮椒聚合支付（xunhupay）',
+      goallpay: 'GoAllPay 全球聚合支付（goallpay）',
+      ocgcpay: 'OCGC 酷云支付（ocgcpay）',
+    }
+    methodOptions.value = methods.map((m: string) => ({ label: methodLabels[m] || m, value: m }))
   } catch { /* keep default */ }
 }
 

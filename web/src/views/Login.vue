@@ -35,6 +35,15 @@ const message = useMessage()
 // 推广系统: prefill the invite code from ?ref= links.
 const referralCode = ref(new URLSearchParams(window.location.search).get('ref') || '')
 
+// 第三方登录：启用中的通道从服务端拉取（管理端未启用时列表为空，不渲染按钮）。
+const oauthProviders = ref<{ provider: string; name: string }[]>([])
+const oauthLabels: Record<string, string> = { github: 'GitHub', qq: 'QQ 登录', weixin: '微信登录', weibo: '微博登录', alipay: '支付宝登录' }
+
+function oauthStart(provider: string) {
+  // 整页跳转到后端（后端 302 到平台授权页），不是 API 调用。
+  window.location.href = `/api/v1/auth/oauth/${encodeURIComponent(provider)}/start?redirect_to=${encodeURIComponent('/')}`
+}
+
 onMounted(async () => {
   try {
     const r = await api.get('/auth/config')
@@ -42,6 +51,14 @@ onMounted(async () => {
     smtpEnabled.value = Boolean(r.data?.data?.smtp_enabled)
     captchaEnabled.value = Boolean(r.data?.data?.captcha_enabled)
   } catch { /* default off */ }
+  try {
+    const r = await api.get('/auth/oauth/providers')
+    oauthProviders.value = r.data?.data || []
+  } catch { /* default off */ }
+  // 第三方回调失败时后端把原因带在 query 上。
+  const q = new URLSearchParams(window.location.search)
+  const oauthError = q.get('oauth_error')
+  if (oauthError) message.error(oauthError)
 })
 
 async function sendCode() {
@@ -225,6 +242,21 @@ async function submitReset() {
           </NForm>
         </NTabPane>
       </NTabs>
+      <template v-if="oauthProviders.length">
+        <div class="oauth-divider"><span>第三方登录</span></div>
+        <div class="oauth-row">
+          <NButton v-for="p in oauthProviders" :key="p.provider" block secondary @click="oauthStart(p.provider)">
+            {{ oauthLabels[p.provider] || p.name || p.provider }}
+          </NButton>
+        </div>
+      </template>
     </NCard>
   </div>
 </template>
+
+<style scoped>
+.oauth-divider { display: flex; align-items: center; gap: 12px; margin: 14px 0 10px; color: #999; font-size: 12px; }
+.oauth-divider::before, .oauth-divider::after { content: ''; flex: 1; height: 1px; background: #e5e8f0; }
+.oauth-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+@media (max-width: 480px) { .oauth-row { grid-template-columns: 1fr; } }
+</style>

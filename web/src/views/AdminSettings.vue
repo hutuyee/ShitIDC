@@ -38,6 +38,229 @@ const tplNames = [
   { label: '工单通知（客服）', value: 'ticket_staff' },
 ]
 
+// ---- 实名核验通道（对应魔方 public/plugins/certification/）----
+const CERT_FIELD_SPECS: Record<string, FieldSpec[]> = {
+  manual: [],
+  alitwo: [
+    { key: 'endpoint', label: '核验端点（默认阿里云云市场二要素）', optional: true },
+    { key: 'app_code', label: 'AppCode（云市场授权码）', secret: true },
+  ],
+}
+const certProviders = ref<any[]>([])
+const certAvailable = ref<string[]>([])
+const certForm = reactive({ name: '', provider: 'alitwo' } as { name: string; provider: string; values: Record<string, string> })
+certForm.values = {}
+const certSaving = ref(false)
+const certChannelLabels: Record<string, string> = {
+  manual: '人工审核', alitwo: '阿里云身份证二要素',
+}
+const certFieldSpecs = () => CERT_FIELD_SPECS[certForm.provider] || []
+function pickCertProvider(p: string) {
+  certForm.provider = p
+  certForm.values = {}
+}
+async function loadCertProviders() {
+  try {
+    const d = dataOf<any>(await api.get('/admin/certification-providers'))
+    certProviders.value = d.providers || []
+    certAvailable.value = d.available || []
+  } catch { /* ignore */ }
+}
+async function saveCertProvider() {
+  if (!certForm.name.trim()) { message.warning('请填写通道名称'); return }
+  const config: Record<string, string> = {}
+  const secret: Record<string, string> = {}
+  for (const spec of certFieldSpecs()) {
+    const v = (certForm.values[spec.key] || '').trim()
+    if (!v) continue
+    if (spec.secret) secret[spec.key] = v
+    else config[spec.key] = v
+  }
+  certSaving.value = true
+  try {
+    await api.post('/admin/certification-providers', { name: certForm.name.trim(), provider: certForm.provider, config, secret, is_default: certProviders.value.length === 0 })
+    message.success('实名核验通道已保存')
+    certForm.name = ''
+    certForm.values = {}
+    await loadCertProviders()
+  } catch (e: any) { message.error(e?.response?.data?.error?.message || '保存失败') }
+  finally { certSaving.value = false }
+}
+async function setDefaultCert(id: string) {
+  try { await api.post(`/admin/certification-providers/${id}/default`); await loadCertProviders() } catch (e: any) { message.error(e?.response?.data?.error?.message || '设置失败') }
+}
+async function deleteCert(id: string) {
+  try { await api.delete(`/admin/certification-providers/${id}`); await loadCertProviders() } catch (e: any) { message.error(e?.response?.data?.error?.message || '删除失败') }
+}
+
+// ---- 短信通道（对应魔方 public/plugins/sms/）----
+interface FieldSpec { key: string; label: string; secret?: boolean; optional?: boolean; area?: boolean }
+// 每个通道的表单字段由前端元数据描述：secret=true 的进凭据（加密存储），
+// 其余进普通配置。与 internal/{sms,oauth} 各通道 Validate 的必填项一一对应。
+const SMS_FIELD_SPECS: Record<string, FieldSpec[]> = {
+  aliyun: [
+    { key: 'sign_name', label: '短信签名' }, { key: 'template_code', label: '模板 ID' },
+    { key: 'region_id', label: '地域（默认 cn-hangzhou）', optional: true },
+    { key: 'template_param', label: '模板参数 JSON（{{code}} 占位）', optional: true, area: true },
+    { key: 'access_key_id', label: 'AccessKey ID', secret: true },
+    { key: 'access_key_secret', label: 'AccessKey Secret', secret: true },
+  ],
+  qcloudsms: [
+    { key: 'sms_sdk_app_id', label: '应用 SmsSdkAppId' }, { key: 'sign_name', label: '短信签名' },
+    { key: 'template_id', label: '模板 ID' }, { key: 'region', label: '地域（默认 ap-guangzhou）', optional: true },
+    { key: 'secret_id', label: 'SecretId', secret: true }, { key: 'secret_key', label: 'SecretKey', secret: true },
+  ],
+  submail: [
+    { key: 'app_id', label: '赛邮应用 ID' }, { key: 'app_sign', label: '短信签名（中文括号）' },
+    { key: 'content_template', label: '短信文案模板（{code}/{ttl} 占位，留空用默认）', optional: true, area: true },
+    { key: 'international_app_id', label: '国际短信应用 ID', optional: true },
+    { key: 'international_app_sign', label: '国际短信签名', optional: true },
+    { key: 'app_key', label: '赛邮应用秘钥', secret: true },
+    { key: 'international_app_key', label: '国际短信应用秘钥', secret: true, optional: true },
+  ],
+  huaweicloud: [
+    { key: 'sender', label: '国内签名通道号' }, { key: 'sign_name', label: '国内短信签名' },
+    { key: 'template_id', label: '国内模板 ID' },
+    { key: 'global_sender', label: '国际/港澳台通道号', optional: true },
+    { key: 'global_template_id', label: '国际/港澳台模板 ID', optional: true },
+    { key: 'app_key', label: 'APP_Key', secret: true }, { key: 'app_secret', label: 'APP_Secret', secret: true },
+    { key: 'global_app_key', label: '国际 APP_Key', secret: true, optional: true },
+    { key: 'global_app_secret', label: '国际 APP_Secret', secret: true, optional: true },
+  ],
+  smsbao: [
+    { key: 'sign', label: '短信签名' },
+    { key: 'content_template', label: '短信文案模板（{code}/{ttl} 占位，留空用默认）', optional: true, area: true },
+    { key: 'user', label: '平台账号', secret: true }, { key: 'pass', label: '平台密码', secret: true },
+  ],
+  generic: [
+    { key: 'endpoint', label: '请求地址' }, { key: 'content_template', label: '短信文案模板（{code}/{ttl} 占位）', area: true },
+    { key: 'method', label: '请求方法 GET/POST（默认 POST）', optional: true },
+    { key: 'content_type', label: '内容类型 form/json（默认 form）', optional: true },
+    { key: 'body_template', label: '请求体模板（{{phone}}/{{code}}/{{content}}/{{secret:KEY}}）', optional: true, area: true },
+    { key: 'success_keyword', label: '成功关键字（留空 2xx 即成功）', optional: true },
+  ],
+}
+const smsProviders = ref<any[]>([])
+const smsAvailable = ref<string[]>([])
+const smsMessages = ref<any[]>([])
+const smsForm = reactive({ name: '', provider: 'aliyun' } as { name: string; provider: string; values: Record<string, string> })
+smsForm.values = {}
+const smsSaving = ref(false)
+
+const smsFieldSpecs = () => SMS_FIELD_SPECS[smsForm.provider] || []
+const smsChannelLabels: Record<string, string> = {
+  aliyun: '阿里云', qcloudsms: '腾讯云', submail: '赛邮', huaweicloud: '华为云', smsbao: '短信宝', generic: '通用 HTTP',
+}
+
+function pickSmsProvider(p: string) {
+  smsForm.provider = p
+  smsForm.values = {}
+}
+async function loadSmsProviders() {
+  try {
+    const d = dataOf<any>(await api.get('/admin/sms-providers'))
+    smsProviders.value = d.providers || []
+    smsAvailable.value = d.available || []
+  } catch { /* ignore */ }
+  try { smsMessages.value = dataOf<any[]>(await api.get('/admin/sms-messages?limit=20')) } catch { smsMessages.value = [] }
+}
+async function saveSmsProvider() {
+  if (!smsForm.name.trim()) { message.warning('请填写通道名称'); return }
+  const config: Record<string, string> = {}
+  const secret: Record<string, string> = {}
+  for (const spec of smsFieldSpecs()) {
+    const v = (smsForm.values[spec.key] || '').trim()
+    if (!v) continue
+    if (spec.secret) secret[spec.key] = v
+    else config[spec.key] = v
+  }
+  smsSaving.value = true
+  try {
+    await api.post('/admin/sms-providers', { name: smsForm.name.trim(), provider: smsForm.provider, config, secret, is_default: smsProviders.value.length === 0 })
+    message.success('短信通道已保存')
+    smsForm.name = ''
+    smsForm.values = {}
+    await loadSmsProviders()
+  } catch (e: any) { message.error(e?.response?.data?.error?.message || '保存失败') }
+  finally { smsSaving.value = false }
+}
+async function setDefaultSms(id: string) {
+  try { await api.post(`/admin/sms-providers/${id}/default`); await loadSmsProviders() } catch (e: any) { message.error(e?.response?.data?.error?.message || '设置失败') }
+}
+async function deleteSms(id: string) {
+  try { await api.delete(`/admin/sms-providers/${id}`); await loadSmsProviders() } catch (e: any) { message.error(e?.response?.data?.error?.message || '删除失败') }
+}
+
+// ---- 第三方登录（对应魔方 public/plugins/oauth/）----
+const OAUTH_FIELD_SPECS: Record<string, FieldSpec[]> = {
+  github: [
+    { key: 'client_id', label: 'Client ID' }, { key: 'scope', label: 'Scope（默认 read:user user:email）', optional: true },
+    { key: 'client_secret', label: 'Client Secret', secret: true },
+  ],
+  qq: [
+    { key: 'client_id', label: 'AppID' }, { key: 'scope', label: 'Scope（默认 snsapi_login）', optional: true },
+    { key: 'client_secret', label: 'AppKey', secret: true },
+  ],
+  weixin: [
+    { key: 'client_id', label: 'AppID（开放平台）' },
+    { key: 'client_secret', label: 'AppSecret', secret: true },
+  ],
+  weibo: [
+    { key: 'client_id', label: 'App Key' }, { key: 'scope', label: 'Scope（留空用应用默认）', optional: true },
+    { key: 'client_secret', label: 'App Secret', secret: true },
+  ],
+  alipay: [
+    { key: 'app_id', label: 'APPID' },
+    { key: 'app_private_key', label: '开发者私钥（PKCS8/base64）', secret: true, area: true },
+  ],
+}
+const oauthProviders = ref<any[]>([])
+const oauthAvailable = ref<string[]>([])
+const oauthForm = reactive({ provider: 'github', allow_register: true } as { provider: string; allow_register: boolean; name: string; values: Record<string, string> })
+oauthForm.values = {}
+oauthForm.name = ''
+const oauthSaving = ref(false)
+
+const oauthFieldSpecs = () => OAUTH_FIELD_SPECS[oauthForm.provider] || []
+const oauthChannelLabels: Record<string, string> = {
+  github: 'GitHub', qq: 'QQ', weixin: '微信', weibo: '微博', alipay: '支付宝',
+}
+function pickOAuthProvider(p: string) {
+  oauthForm.provider = p
+  oauthForm.values = {}
+}
+async function loadOauthProviders() {
+  try {
+    const d = dataOf<any>(await api.get('/admin/oauth-providers'))
+    oauthProviders.value = d.providers || []
+    oauthAvailable.value = d.available || []
+  } catch { /* ignore */ }
+}
+async function saveOauthProvider() {
+  const config: Record<string, string> = {}
+  const secret: Record<string, string> = {}
+  for (const spec of oauthFieldSpecs()) {
+    const v = (oauthForm.values[spec.key] || '').trim()
+    if (!v) continue
+    if (spec.secret) secret[spec.key] = v
+    else config[spec.key] = v
+  }
+  oauthSaving.value = true
+  try {
+    await api.post('/admin/oauth-providers', { name: oauthForm.name.trim(), provider: oauthForm.provider, config, secret, allow_register: oauthForm.allow_register })
+    message.success('第三方登录已保存（登录页会展示已启用的通道）')
+    oauthForm.values = {}
+    await loadOauthProviders()
+  } catch (e: any) { message.error(e?.response?.data?.error?.message || '保存失败') }
+  finally { oauthSaving.value = false }
+}
+async function toggleOauth(p: any) {
+  try { await api.post(`/admin/oauth-providers/${p.public_id}/toggle`, { active: !p.active }); await loadOauthProviders() } catch (e: any) { message.error(e?.response?.data?.error?.message || '操作失败') }
+}
+async function deleteOauth(id: string) {
+  try { await api.delete(`/admin/oauth-providers/${id}`); await loadOauthProviders() } catch (e: any) { message.error(e?.response?.data?.error?.message || '删除失败') }
+}
+
 async function load() {
   loading.value = true
   try {
@@ -66,6 +289,7 @@ async function load() {
   try {
     templates.value = dataOf<any[]>(await api.get('/admin/mail-templates'))
   } catch { templates.value = [] }
+  await Promise.all([loadSmsProviders(), loadOauthProviders(), loadCertProviders()])
 }
 
 async function save() {
@@ -209,6 +433,111 @@ onMounted(load)
           <div class="row" style="gap:8px">
             <NButton type="primary" @click="saveTemplate">保存模板</NButton>
             <NButton secondary @click="removeTemplate">删除模板（回退内置）</NButton>
+          </div>
+        </div>
+      </div>
+    </section>
+    <section class="panel">
+      <div class="panel-title-row"><div><h2>短信通道</h2><span>验证码发送通道（限频与风控在服务端）</span></div></div>
+      <div class="admin-two-col">
+        <div class="stack">
+          <div class="form-grid">
+            <label><span>通道名称</span><NInput v-model:value="smsForm.name" placeholder="例如：主用-腾讯云" /></label>
+            <label><span>通道类型</span>
+              <select class="native-select" :value="smsForm.provider" @change="pickSmsProvider(($event.target as HTMLSelectElement).value)">
+                <option v-for="p in smsAvailable" :key="p" :value="p">{{ smsChannelLabels[p] || p }}（{{ p }}）</option>
+              </select>
+            </label>
+          </div>
+          <div class="form-grid">
+            <label v-for="spec in smsFieldSpecs()" :key="spec.key" :class="{ full: spec.area }">
+              <span>{{ spec.label }}<template v-if="spec.secret">（凭据）</template><template v-if="spec.optional">（可选）</template></span>
+              <NInput v-if="spec.secret" v-model:value="smsForm.values[spec.key]" type="password" show-password-on="click" />
+              <NInput v-else-if="spec.area" v-model:value="smsForm.values[spec.key]" type="textarea" :rows="2" />
+              <NInput v-else v-model:value="smsForm.values[spec.key]" />
+            </label>
+          </div>
+          <NButton type="primary" :loading="smsSaving" @click="saveSmsProvider">添加通道</NButton>
+          <div v-if="smsProviders.length" class="stack">
+            <div v-for="p in smsProviders" :key="p.public_id" class="advanced-row">
+              <div><b>{{ p.name }}</b><small>{{ smsChannelLabels[p.provider] || p.provider }}<template v-if="p.is_default"> · 默认</template><template v-if="p.last_error"> · 最近错误：{{ p.last_error }}</template></small></div>
+              <div class="row" style="gap:8px">
+                <NButton v-if="!p.is_default" size="small" secondary @click="setDefaultSms(p.public_id)">设为默认</NButton>
+                <NButton size="small" quaternary type="error" @click="deleteSms(p.public_id)">删除</NButton>
+              </div>
+            </div>
+          </div>
+          <div v-if="smsMessages.length" class="stack">
+            <div class="panel-title-row"><div><h2>最近发送流水</h2><span>短信是花钱的，盗刷主要靠这张表排查</span></div></div>
+            <div v-for="(m, i) in smsMessages" :key="i" class="advanced-row">
+              <div><b>{{ m.phone }}</b><small>{{ m.purpose }} · {{ m.provider_name || m.provider || '-' }} · {{ m.success ? '成功' : '失败' }}<template v-if="m.error"> · {{ m.error }}</template></small></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-title-row"><div><h2>第三方登录</h2><span>启用后登录页出现对应按钮；回调地址为 {站点}/api/v1/auth/oauth/{通道}/callback</span></div></div>
+      <div class="admin-two-col">
+        <div class="stack">
+          <div class="form-grid">
+            <label><span>通道类型</span>
+              <select class="native-select" :value="oauthForm.provider" @change="pickOAuthProvider(($event.target as HTMLSelectElement).value)">
+                <option v-for="p in oauthAvailable" :key="p" :value="p">{{ oauthChannelLabels[p] || p }}（{{ p }}）</option>
+              </select>
+            </label>
+            <label><span>显示名称（可选）</span><NInput v-model:value="oauthForm.name" :placeholder="oauthChannelLabels[oauthForm.provider] || oauthForm.provider" /></label>
+          </div>
+          <div class="form-grid">
+            <label v-for="spec in oauthFieldSpecs()" :key="spec.key" :class="{ full: spec.area }">
+              <span>{{ spec.label }}<template v-if="spec.secret">（凭据）</template><template v-if="spec.optional">（可选）</template></span>
+              <NInput v-if="spec.secret" v-model:value="oauthForm.values[spec.key]" type="password" show-password-on="click" :placeholder="spec.area ? 'PKCS8 PEM 或纯 base64' : ''" />
+              <NInput v-else v-model:value="oauthForm.values[spec.key]" />
+            </label>
+          </div>
+          <div class="advanced-row"><div><b>允许自动注册</b><small>未绑定用户首次登录时自动建号（邮箱冲突会要求先绑定）</small></div><NCheckbox v-model:checked="oauthForm.allow_register" /></div>
+          <NButton type="primary" :loading="oauthSaving" @click="saveOauthProvider">保存通道（凭据留空表示沿用已存值）</NButton>
+          <div v-if="oauthProviders.length" class="stack">
+            <div v-for="p in oauthProviders" :key="p.public_id" class="advanced-row">
+              <div><b>{{ p.name || p.provider }}</b><small>{{ oauthChannelLabels[p.provider] || p.provider }}<template v-if="!p.active"> · 已停用</template><template v-if="p.last_error"> · 最近错误：{{ p.last_error }}</template></small></div>
+              <div class="row" style="gap:8px">
+                <NButton size="small" secondary @click="toggleOauth(p)">{{ p.active ? '停用' : '启用' }}</NButton>
+                <NButton size="small" quaternary type="error" @click="deleteOauth(p.public_id)">删除</NButton>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+    <section class="panel">
+      <div class="panel-title-row"><div><h2>实名核验通道</h2><span>「人工审核」无需配置；自动核验按次计费，凭据加密存储</span></div></div>
+      <div class="admin-two-col">
+        <div class="stack">
+          <div class="form-grid">
+            <label><span>通道名称</span><NInput v-model:value="certForm.name" placeholder="例如：阿里云二要素" /></label>
+            <label><span>通道类型</span>
+              <select class="native-select" :value="certForm.provider" @change="pickCertProvider(($event.target as HTMLSelectElement).value)">
+                <option v-for="p in certAvailable" :key="p" :value="p">{{ certChannelLabels[p] || p }}（{{ p }}）</option>
+              </select>
+            </label>
+          </div>
+          <div v-if="certFieldSpecs().length" class="form-grid">
+            <label v-for="spec in certFieldSpecs()" :key="spec.key" :class="{ full: spec.area }">
+              <span>{{ spec.label }}<template v-if="spec.secret">（凭据）</template><template v-if="spec.optional">（可选）</template></span>
+              <NInput v-if="spec.secret" v-model:value="certForm.values[spec.key]" type="password" show-password-on="click" />
+              <NInput v-else v-model:value="certForm.values[spec.key]" />
+            </label>
+          </div>
+          <NButton type="primary" :loading="certSaving" @click="saveCertProvider">添加通道</NButton>
+          <div v-if="certProviders.length" class="stack">
+            <div v-for="p in certProviders" :key="p.public_id || p.id" class="advanced-row">
+              <div><b>{{ p.name }}</b><small>{{ certChannelLabels[p.provider] || p.provider }}<template v-if="p.is_default"> · 默认</template><template v-if="p.last_error"> · 最近错误：{{ p.last_error }}</template></small></div>
+              <div class="row" style="gap:8px">
+                <NButton v-if="!p.is_default" size="small" secondary @click="setDefaultCert(p.public_id || p.id)">设为默认</NButton>
+                <NButton size="small" quaternary type="error" @click="deleteCert(p.public_id || p.id)">删除</NButton>
+              </div>
+            </div>
           </div>
         </div>
       </div>

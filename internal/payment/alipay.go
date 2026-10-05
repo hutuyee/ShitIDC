@@ -2,23 +2,18 @@ package payment
 
 import (
 	"context"
-	"crypto"
-	"crypto/rand"
 	"crypto/rsa"
-	"crypto/sha256"
-	"crypto/x509"
-	"encoding/base64"
 	"encoding/json"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/hutuyee/ShitIDC/internal/alipaykit"
 )
 
 // AlipayGateway implements 支付宝电脑网站支付 (alipay.trade.page.pay, RSA2).
@@ -46,101 +41,11 @@ func parseAlipaySecret(raw string) (alipaySecrets, error) {
 }
 
 // parsePrivateKey accepts PKCS8/PKCS1 PEM or a bare base64 (PKCS8) body.
-func parsePrivateKey(raw string) (*rsa.PrivateKey, error) {
-	raw = strings.TrimSpace(raw)
-	if block, _ := pem.Decode([]byte(raw)); block != nil {
-		if k, err := x509.ParsePKCS8PrivateKey(block.Bytes); err == nil {
-			if key, ok := k.(*rsa.PrivateKey); ok {
-				return key, nil
-			}
-			return nil, errors.New("商户私钥不是 RSA 私钥")
-		}
-		if k, err := x509.ParsePKCS1PrivateKey(block.Bytes); err == nil {
-			return k, nil
-		}
-		return nil, errors.New("商户私钥 PEM 解析失败")
-	}
-	der, err := base64.StdEncoding.DecodeString(raw)
-	if err != nil {
-		return nil, errors.New("商户私钥既不是 PEM 也不是 base64")
-	}
-	if k, err := x509.ParsePKCS8PrivateKey(der); err == nil {
-		if key, ok := k.(*rsa.PrivateKey); ok {
-			return key, nil
-		}
-	}
-	key, err := x509.ParsePKCS1PrivateKey(der)
-	if err != nil {
-		return nil, errors.New("商户私钥解析失败")
-	}
-	return key, nil
-}
+// 实现在 internal/alipaykit，与第三方登录共用一份。
+func parsePrivateKey(raw string) (*rsa.PrivateKey, error) { return alipaykit.ParsePrivateKey(raw) }
 
 // parsePublicKey accepts X.509 PEM or a bare base64 SubjectPublicKeyInfo.
-func parsePublicKey(raw string) (*rsa.PublicKey, error) {
-	raw = strings.TrimSpace(raw)
-	if block, _ := pem.Decode([]byte(raw)); block != nil {
-		pub, err := x509.ParsePKIXPublicKey(block.Bytes)
-		if err != nil {
-			return nil, errors.New("支付宝公钥 PEM 解析失败")
-		}
-		key, ok := pub.(*rsa.PublicKey)
-		if !ok {
-			return nil, errors.New("支付宝公钥不是 RSA 公钥")
-		}
-		return key, nil
-	}
-	der, err := base64.StdEncoding.DecodeString(raw)
-	if err != nil {
-		return nil, errors.New("支付宝公钥既不是 PEM 也不是 base64")
-	}
-	pub, err := x509.ParsePKIXPublicKey(der)
-	if err != nil {
-		return nil, errors.New("支付宝公钥解析失败")
-	}
-	key, ok := pub.(*rsa.PublicKey)
-	if !ok {
-		return nil, errors.New("支付宝公钥不是 RSA 公钥")
-	}
-	return key, nil
-}
-
-// alipaySignContent builds the canonical sign string: sorted key=value pairs
-// joined with &, excluding sign and sign_type, with no URL escaping (per the
-// Alipay signing spec).
-func alipaySignContent(params url.Values) string {
-	keys := make([]string, 0, len(params))
-	for k := range params {
-		if k == "sign" || k == "sign_type" || params.Get(k) == "" {
-			continue
-		}
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	parts := make([]string, 0, len(keys))
-	for _, k := range keys {
-		parts = append(parts, k+"="+params.Get(k))
-	}
-	return strings.Join(parts, "&")
-}
-
-func alipaySignRSA2(privateKey *rsa.PrivateKey, content string) (string, error) {
-	digest := sha256.Sum256([]byte(content))
-	sig, err := rsa.SignPKCS1v15(rand.Reader, privateKey, crypto.SHA256, digest[:])
-	if err != nil {
-		return "", err
-	}
-	return base64.StdEncoding.EncodeToString(sig), nil
-}
-
-func alipayVerifyRSA2(publicKey *rsa.PublicKey, content, signature string) bool {
-	sig, err := base64.StdEncoding.DecodeString(signature)
-	if err != nil {
-		return false
-	}
-	digest := sha256.Sum256([]byte(content))
-	return rsa.VerifyPKCS1v15(publicKey, crypto.SHA256, digest[:], sig) == nil
-}
+func parsePublicKey(raw string) (*rsa.PublicKey, error) { return alipaykit.ParsePublicKey(raw) }
 
 // alipayMoney renders cents as the decimal string Alipay expects ("12.30").
 func alipayMoney(cents int64) string {
@@ -181,8 +86,8 @@ func (g AlipayGateway) PayURL(_ context.Context, cfg ProviderConfig, p Prepared)
 		"return_url":  {p.ReturnURL},
 		"biz_content": {string(biz)},
 	}
-	content := alipaySignContent(params)
-	sign, err := alipaySignRSA2(privateKey, content)
+	content := alipaykit.SignContent(params)
+	sign, err := alipaykit.SignRSA2(privateKey, content)
 	if err != nil {
 		return "", errors.New("支付宝签名失败: " + err.Error())
 	}
@@ -230,7 +135,7 @@ func (g AlipayGateway) VerifyNotify(cfg ProviderConfig, input NotifyInput) Notif
 	if sign == "" {
 		return fail(errors.New("回调缺少 sign"))
 	}
-	if !alipayVerifyRSA2(publicKey, alipaySignContent(values), sign) {
+	if !alipaykit.VerifyRSA2(publicKey, alipaykit.SignContent(values), sign) {
 		return fail(errors.New("支付宝回调签名验证失败"))
 	}
 	status := values.Get("trade_status")
@@ -299,7 +204,7 @@ func (g AlipayGateway) Refund(ctx context.Context, cfg ProviderConfig, r RefundR
 		"version":     {"1.0"},
 		"biz_content": {string(biz)},
 	}
-	sign, err := alipaySignRSA2(privateKey, alipaySignContent(params))
+	sign, err := alipaykit.SignRSA2(privateKey, alipaykit.SignContent(params))
 	if err != nil {
 		return "", errors.New("支付宝退款签名失败: " + err.Error())
 	}
