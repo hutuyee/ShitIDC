@@ -98,6 +98,7 @@ function toggleTheme() {
             <router-link :to="ADMIN_PATH">控制台</router-link>
             <router-link v-if="auth.permissions['ticket.manage']" :to="ADMIN_PATH + '/tickets'">工单客服</router-link>
             <router-link v-if="auth.permissions['user.read']" :to="ADMIN_PATH + '/users'">用户列表</router-link>
+            <router-link v-if="auth.permissions['user.manage']" :to="ADMIN_PATH + '/certifications'">实名审核</router-link>
             <router-link v-if="auth.permissions['service.manage']" :to="ADMIN_PATH + '/services'">服务管理</router-link>
             <router-link v-if="auth.permissions['finance.report']" :to="ADMIN_PATH + '/stats'">财务统计</router-link>
             <router-link v-if="auth.permissions['order.read']" :to="ADMIN_PATH + '/orders'">订单中心</router-link>
