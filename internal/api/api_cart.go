@@ -121,6 +121,11 @@ func (a *App) checkoutCart(c *gin.Context) {
 		httpx.Fail(c, 400, "CART_EMPTY", "购物车是空的")
 		return
 	}
+	// 客户自定义字段里勾了「订购前必填」的，缺一个都不让下单（对齐 client_custom_field 插件）。
+	if missing, merr := a.Store.MissingBeforeSettleFields(c, pr.User.ID); merr == nil && len(missing) > 0 {
+		httpx.Fail(c, 409, "CUSTOM_FIELD_REQUIRED", "下单前请先在个人中心填写："+strings.Join(missing, "、"))
+		return
+	}
 	if !cart.Payable {
 		httpx.Fail(c, 409, "CART_NOT_PAYABLE", "购物车里有不可售的商品，请先移除")
 		return

@@ -62,6 +62,7 @@ func NewRouter(a *App) *gin.Engine {
 		v1.GET("/auth/config", a.authConfig)
 		v1.GET("/auth/captcha", a.issueCaptcha)
 		v1.POST("/auth/register", a.register)
+		v1.GET("/auth/register-fields", a.registerClientFields)
 		v1.POST("/auth/register/email-code", a.sendEmailCode)
 		// 短信验证码（注册 / 登录 / 绑定 / 重置）
 		v1.POST("/auth/sms-code", a.sendSMSCode)
@@ -169,6 +170,8 @@ func NewRouter(a *App) *gin.Engine {
 			authed.GET("/tickets/:id", a.require("ticket.read"), a.ticketDetail)
 			authed.POST("/tickets/:id/reply", a.require("ticket.write"), a.csrf(), a.replyTicket)
 			authed.POST("/tickets/:id/close", a.require("ticket.write"), a.csrf(), a.closeTicket)
+			authed.GET("/profile/custom-fields", a.require("profile.read"), a.myClientFields)
+			authed.PUT("/profile/custom-fields", a.require("profile.update"), a.csrf(), a.saveMyClientFields)
 			authed.GET("/profile", a.require("profile.manage"), a.getProfile)
 			authed.PUT("/profile", a.require("profile.manage"), a.csrf(), a.updateProfile)
 			authed.GET("/api-tokens", a.require("api_token.manage"), a.listTokens)
@@ -387,6 +390,14 @@ func (a *App) registerAdminRoutes(g *gin.RouterGroup) {
 	g.PUT("/abnormal-inspection-records/:id", a.require("service.manage"), a.csrf(), a.adminUpdateInspectionRecord)
 	g.DELETE("/abnormal-inspection-records/:id", a.require("service.manage"), a.csrf(), a.adminDeleteInspectionRecord)
 	g.GET("/abnormal-inspection-records/:id/images/:index", a.require("service.manage"), a.adminInspectionImage)
+	// 客户自定义字段（对齐魔方 client_custom_field 插件）
+	g.GET("/client-custom-fields", a.require("user.read"), a.adminListClientCustomFields)
+	g.POST("/client-custom-fields", a.require("user.manage"), a.csrf(), a.adminCreateClientCustomField)
+	g.PUT("/client-custom-fields/:id", a.require("user.manage"), a.csrf(), a.adminUpdateClientCustomField)
+	g.PUT("/client-custom-fields/:id/status", a.require("user.manage"), a.csrf(), a.adminSetClientCustomFieldStatus)
+	g.PUT("/client-custom-fields/:id/drag", a.require("user.manage"), a.csrf(), a.adminMoveClientCustomField)
+	g.DELETE("/client-custom-fields/:id", a.require("user.manage"), a.csrf(), a.adminDeleteClientCustomField)
+	g.GET("/users/:id/custom-fields", a.require("user.read"), a.adminUserClientFields)
 	g.GET("/user-groups", a.require("agent.manage"), a.adminListUserGroups)
 	g.POST("/user-groups", a.require("agent.manage"), a.csrf(), a.adminCreateUserGroup)
 	g.PUT("/user-groups/:id", a.require("agent.manage"), a.csrf(), a.adminUpdateUserGroup)
@@ -641,14 +652,15 @@ func (a *App) authConfig(c *gin.Context) {
 
 func (a *App) register(c *gin.Context) {
 	var in struct {
-		Email          string `json:"email"`
-		Password       string `json:"password"`
-		Code           string `json:"code"`
-		ReferralCode   string `json:"referral_code"`
-		CaptchaID      string `json:"captcha_id"`
-		CaptchaAns     string `json:"captcha_answer"`
-		CaptchaToken   string `json:"captcha_token"`
-		CaptchaRandstr string `json:"captcha_randstr"`
+		Email          string            `json:"email"`
+		Password       string            `json:"password"`
+		Code           string            `json:"code"`
+		ReferralCode   string            `json:"referral_code"`
+		CaptchaID      string            `json:"captcha_id"`
+		CaptchaAns     string            `json:"captcha_answer"`
+		CaptchaToken   string            `json:"captcha_token"`
+		CaptchaRandstr string            `json:"captcha_randstr"`
+		CustomFields   map[string]string `json:"custom_fields"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
 		httpx.Fail(c, 400, "INVALID_REQUEST", "请求格式错误")
@@ -660,6 +672,11 @@ func (a *App) register(c *gin.Context) {
 	in.Email = strings.TrimSpace(strings.ToLower(in.Email))
 	if !strings.Contains(in.Email, "@") {
 		httpx.Fail(c, 400, "INVALID_EMAIL", "邮箱格式错误")
+		return
+	}
+	// 客户自定义字段：先校验，避免账号建出来才发现字段不合法。
+	if err := a.Store.ValidateRegisterFieldValues(c, in.CustomFields); err != nil {
+		httpx.Fail(c, 400, "CUSTOM_FIELD_INVALID", err.Error())
 		return
 	}
 	mailSettings, err := a.Store.GetMailSettings(c)
@@ -708,6 +725,12 @@ func (a *App) register(c *gin.Context) {
 		httpx.Fail(c, 409, "USER_EXISTS", "用户已存在或数据冲突")
 		return
 	}
+	// 注册时填写的客户自定义字段（失败不阻断注册，用户可在个人中心补填）。
+	if len(in.CustomFields) > 0 {
+		if err := a.Store.SaveRegisterFieldValues(c, u.ID, in.CustomFields); err != nil {
+			slog.Warn("register custom fields save failed", "error", err)
+		}
+	}
 	// 推广系统: attribute the fresh registration to the invite code owner.
 	if in.ReferralCode != "" {
 		if _, rerr := a.Store.ApplyReferral(c, u.ID, in.ReferralCode); rerr != nil {
@@ -721,11 +744,12 @@ func (a *App) register(c *gin.Context) {
 
 func (a *App) sendEmailCode(c *gin.Context) {
 	var in struct {
-		Email          string `json:"email"`
-		CaptchaID      string `json:"captcha_id"`
-		CaptchaAns     string `json:"captcha_answer"`
-		CaptchaToken   string `json:"captcha_token"`
-		CaptchaRandstr string `json:"captcha_randstr"`
+		Email          string            `json:"email"`
+		CaptchaID      string            `json:"captcha_id"`
+		CaptchaAns     string            `json:"captcha_answer"`
+		CaptchaToken   string            `json:"captcha_token"`
+		CaptchaRandstr string            `json:"captcha_randstr"`
+		CustomFields   map[string]string `json:"custom_fields"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
 		httpx.Fail(c, 400, "INVALID_REQUEST", "请求格式错误")
@@ -737,6 +761,11 @@ func (a *App) sendEmailCode(c *gin.Context) {
 	in.Email = strings.TrimSpace(strings.ToLower(in.Email))
 	if !strings.Contains(in.Email, "@") {
 		httpx.Fail(c, 400, "INVALID_EMAIL", "邮箱格式错误")
+		return
+	}
+	// 客户自定义字段：先校验，避免账号建出来才发现字段不合法。
+	if err := a.Store.ValidateRegisterFieldValues(c, in.CustomFields); err != nil {
+		httpx.Fail(c, 400, "CUSTOM_FIELD_INVALID", err.Error())
 		return
 	}
 	// 发送前先解析出可用的发信方式（通道优先，SMTP 兜底），
