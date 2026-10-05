@@ -31,6 +31,7 @@ import AdminCashbacks from './views/AdminCashbacks.vue'
 import AdminOrderCosts from './views/AdminOrderCosts.vue'
 import AdminInspectionRecords from './views/AdminInspectionRecords.vue'
 import AdminCertifications from './views/AdminCertifications.vue'
+import AdminClientFields from './views/AdminClientFields.vue'
 import AdminExport from './views/AdminExport.vue'
 import AdminExpiredIpLogs from './views/AdminExpiredIpLogs.vue'
 import AdminAgents from './views/AdminAgents.vue'
@@ -63,6 +64,7 @@ const router = createRouter({ history: createWebHistory(), routes: [
   { path: ADMIN_PATH + '/order-costs', component: AdminOrderCosts },
   { path: ADMIN_PATH + '/inspection-records', component: AdminInspectionRecords },
   { path: ADMIN_PATH + '/certifications', component: AdminCertifications },
+  { path: ADMIN_PATH + '/client-fields', component: AdminClientFields },
   { path: ADMIN_PATH + '/export', component: AdminExport },
   { path: ADMIN_PATH + '/expired-ip-logs', component: AdminExpiredIpLogs },
   { path: ADMIN_PATH + '/agents', component: AdminAgents },

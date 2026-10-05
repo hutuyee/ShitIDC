@@ -16,6 +16,7 @@ const detailOpen = ref(false)
 const detail = ref<any>(null)
 const detailLoading = ref(false)
 const detailTab = ref('overview')
+const fieldValues = ref<any[]>([])
 
 const adjustOpen = ref(false)
 const amount = ref<number | null>(null)
@@ -45,6 +46,7 @@ async function openDetail(u: any) {
   detailLoading.value = true
   try {
     detail.value = dataOf<any>(await api.get(`/admin/users/${u.id}/detail`))
+    api.get(`/admin/users/${u.id}/custom-fields`).then(x => { fieldValues.value = dataOf<any>(x).list || [] }).catch(() => { fieldValues.value = [] })
   } catch (e: any) {
     message.error(e?.response?.data?.error?.message || '读取用户详情失败')
   } finally { detailLoading.value = false }
@@ -267,7 +269,20 @@ onMounted(load)
                 </div>
               </div>
             </NTabPane>
+
+            <NTabPane name="fields" :tab="`自定义字段 (${fieldValues.filter(f => f.has_value).length})`">
+              <div v-if="!fieldValues.length" class="empty-box" style="margin:0">没有启用的自定义字段。</div>
+              <div v-else class="stack">
+                <div v-for="f in fieldValues" :key="f.id" class="mini-row">
+                  <span class="muted">{{ f.name }}<em v-if="f.admin_only" class="muted">（管理员可见）</em></span>
+                  <b v-if="f.type === 'password'">{{ f.has_value ? '已设置' : '—' }}</b>
+                  <b v-else-if="f.type === 'tickbox'">{{ f.value === '1' ? '是' : '否' }}</b>
+                  <b v-else>{{ f.value || '—' }}</b>
+                </div>
+              </div>
+            </NTabPane>
           </NTabs>
+
         </div>
       </NDrawerContent>
     </NDrawer>

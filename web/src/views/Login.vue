@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { NButton, NCard, NForm, NFormItem, NInput, NTabs, NTabPane, useMessage } from 'naive-ui'
+import { NButton, NCard, NCheckbox, NForm, NFormItem, NInput, NSelect, NTabs, NTabPane, useMessage } from 'naive-ui'
 import BrandMark from '../components/BrandMark.vue'
 import CaptchaInput from '../components/CaptchaInput.vue'
 import { useAuthStore, type LoginExtra } from '../stores/auth'
-import { api } from '../api'
+import { api, dataOf } from '../api'
 
 const email = ref('')
 const password = ref('')
@@ -32,6 +32,20 @@ const resetCaptchaRef = ref<InstanceType<typeof CaptchaInput> | null>(null)
 const auth = useAuthStore()
 const router = useRouter()
 const message = useMessage()
+// 客户自定义字段：注册表单里由后台「注册时显示」的字段动态渲染。
+const regFields = ref<any[]>([])
+const regValues = ref<Record<string, string>>({})
+const regFieldOptions = (f: any) => String(f.options || '').split(',').map((x: string) => x.trim()).filter(Boolean).map((x: string) => ({ label: x, value: x }))
+async function loadRegFields() {
+  try {
+    const res = dataOf<any>(await api.get('/auth/register-fields'))
+    regFields.value = res.list || []
+    const values: Record<string, string> = {}
+    for (const f of regFields.value) values[f.id] = f.type === 'tickbox' ? '0' : ''
+    regValues.value = values
+  } catch { regFields.value = [] }
+}
+
 // 推广系统: prefill the invite code from ?ref= links.
 const referralCode = ref(new URLSearchParams(window.location.search).get('ref') || '')
 
@@ -45,6 +59,7 @@ function oauthStart(provider: string) {
 }
 
 onMounted(async () => {
+  loadRegFields()
   try {
     const r = await api.get('/auth/config')
     verifyRequired.value = Boolean(r.data?.data?.email_verify_required)
@@ -89,7 +104,7 @@ async function sendCode() {
 async function submit(register = false) {
   loading.value = true
   try {
-    if (register) await auth.register(email.value, password.value, code.value.trim(), { captcha_id: regCaptcha.value.id, captcha_answer: regCaptcha.value.answer, captcha_token: regCaptcha.value.token, captcha_randstr: regCaptcha.value.randstr, referral_code: referralCode.value.trim() || undefined })
+    if (register) await auth.register(email.value, password.value, code.value.trim(), { captcha_id: regCaptcha.value.id, captcha_answer: regCaptcha.value.answer, captcha_token: regCaptcha.value.token, captcha_randstr: regCaptcha.value.randstr, referral_code: referralCode.value.trim() || undefined, custom_fields: { ...regValues.value } })
     else await auth.login(email.value, password.value, loginExtra())
     router.push('/')
   } catch (e: any) {
@@ -215,6 +230,13 @@ async function submitReset() {
             </NFormItem>
             <NFormItem label="密码（至少10位）"><NInput v-model:value="password" type="password" show-password-on="click" /></NFormItem>
             <NFormItem v-if="referralCode" label="邀请码"><NInput v-model:value="referralCode" placeholder="好友邀请码" /></NFormItem>
+            <NFormItem v-for="f in regFields" :key="f.id" :label="f.name + (f.required && f.type !== 'tickbox' ? ' *' : '')">
+              <NSelect v-if="f.type === 'dropdown'" v-model:value="regValues[f.id]" :options="regFieldOptions(f)" clearable />
+              <NSelect v-else-if="f.type === 'dropdown_text'" v-model:value="regValues[f.id]" :options="regFieldOptions(f)" filterable tag clearable />
+              <NCheckbox v-else-if="f.type === 'tickbox'" :checked="regValues[f.id] === '1'" @update:checked="(v: boolean) => regValues[f.id] = v ? '1' : '0'">{{ f.description || f.name }}</NCheckbox>
+              <NInput v-else-if="f.type === 'textarea'" v-model:value="regValues[f.id]" type="textarea" :rows="2" :placeholder="f.description || ''" />
+              <NInput v-else v-model:value="regValues[f.id]" :type="f.type === 'password' ? 'password' : 'text'" show-password-on="click" :placeholder="f.description || ''" />
+            </NFormItem>
             <NButton block type="primary" :loading="loading" @click="submit(true)">注册并登录</NButton>
           </NForm>
         </NTabPane>

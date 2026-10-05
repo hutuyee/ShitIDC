@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { NButton, NInput, NModal, NQrCode, NTag, useMessage } from 'naive-ui'
+import { NButton, NCheckbox, NInput, NModal, NQrCode, NSelect, NTag, useMessage } from 'naive-ui'
 import { api, dataOf, setCSRF } from '../api'
 import { useAuthStore } from '../stores/auth'
 
@@ -16,6 +16,30 @@ const form = reactive({
   nickname: '', real_name: '', company: '', phone: '', qq: '',
   country: '中国', province: '', city: '', address: '',
 })
+
+// ---- 客户自定义字段（对齐 client_custom_field 插件，可自助填写） ----
+const customFields = ref<any[]>([])
+const customValues = reactive<Record<string, string>>({})
+const customSaving = ref(false)
+const fieldOptions = (f: any) => String(f.options || '').split(',').map((x: string) => x.trim()).filter(Boolean).map((x: string) => ({ label: x, value: x }))
+async function loadCustomFields() {
+  try {
+    const res = dataOf<any>(await api.get('/profile/custom-fields'))
+    customFields.value = res.list || []
+    for (const f of customFields.value) {
+      customValues[f.id] = f.type === 'tickbox' ? (f.value === '1' ? '1' : '0') : (f.value || '')
+    }
+  } catch { customFields.value = [] }
+}
+async function saveCustomFields() {
+  customSaving.value = true
+  try {
+    await api.put('/profile/custom-fields', { values: { ...customValues } })
+    message.success('自定义字段已保存')
+    await loadCustomFields()
+  } catch (e: any) { message.error(e?.response?.data?.error?.message || '保存失败') }
+  finally { customSaving.value = false }
+}
 
 // ---- password change ----
 const pwOpen = ref(false)
@@ -332,7 +356,7 @@ function bindOauthStart(provider: string) {
   window.location.href = `/api/v1/auth/oauth/${encodeURIComponent(provider)}/start?redirect_to=${encodeURIComponent('/profile')}`
 }
 
-onMounted(() => { load(); loadSessions(); loadTotp(); loadPhone(); loadOauthIdentities(); loadCertification() })
+onMounted(() => { load(); loadCustomFields(); loadSessions(); loadTotp(); loadPhone(); loadOauthIdentities(); loadCertification() })
 onUnmounted(stopCertPoll)
 </script>
 
@@ -463,6 +487,22 @@ onUnmounted(stopCertPoll)
         </div>
       </section>
     </div>
+
+    <section v-if="!loading && customFields.length" class="panel stack admin-form-panel">
+      <div class="panel-title-row"><div><h2>自定义字段</h2><span>管理员为账号补充的资料项，带 * 为必填</span></div></div>
+      <div class="form-grid">
+        <label v-for="f in customFields" :key="f.id" :class="f.type === 'textarea' ? 'full' : ''">
+          {{ f.name }}<template v-if="f.required && f.type !== 'tickbox'"> *</template>
+          <NSelect v-if="f.type === 'dropdown'" v-model:value="customValues[f.id]" :options="fieldOptions(f)" clearable />
+          <NSelect v-else-if="f.type === 'dropdown_text'" v-model:value="customValues[f.id]" :options="fieldOptions(f)" filterable tag clearable />
+          <NCheckbox v-else-if="f.type === 'tickbox'" :checked="customValues[f.id] === '1'" @update:checked="(v: boolean) => customValues[f.id] = v ? '1' : '0'">{{ f.description || f.name }}</NCheckbox>
+          <NInput v-else-if="f.type === 'textarea'" v-model:value="customValues[f.id]" type="textarea" :rows="3" :placeholder="f.description || ''" />
+          <NInput v-else v-model:value="customValues[f.id]" :type="f.type === 'password' ? 'password' : 'text'" :show-password-on="f.type === 'password' ? 'click' : undefined" :placeholder="f.type === 'password' && f.has_value ? '已设置，留空表示不修改' : (f.description || '')" />
+          <small v-if="f.description && f.type !== 'tickbox'" class="muted">{{ f.description }}</small>
+        </label>
+      </div>
+      <div class="form-actions"><NButton type="primary" :loading="customSaving" @click="saveCustomFields">保存自定义字段</NButton></div>
+    </section>
 
     <NModal v-model:show="certOpen" preset="card" title="实名认证" style="width:min(480px,94vw)">
       <div class="stack">
