@@ -139,6 +139,23 @@ const SMS_FIELD_SPECS: Record<string, FieldSpec[]> = {
     { key: 'body_template', label: '请求体模板（{{phone}}/{{code}}/{{content}}/{{secret:KEY}}）', optional: true, area: true },
     { key: 'success_keyword', label: '成功关键字（留空 2xx 即成功）', optional: true },
   ],
+  officesms: [
+    { key: 'account', label: '账号 account' }, { key: 'channel', label: '通道编码 channel' },
+    { key: 'signature', label: '短信签名' },
+    { key: 'content_template', label: '短信文案模板（{code}/{ttl} 占位，留空用默认）', optional: true, area: true },
+    { key: 'auth_code', label: '授权码 authCode', secret: true },
+  ],
+  puddingv10sms: [
+    { key: 'username', label: '平台用户名' }, { key: 'channel', label: '发信通道 ID' },
+    { key: 'sign', label: '短信签名' },
+    { key: 'content_template', label: '短信文案模板（{code}/{ttl} 占位，留空用默认）', optional: true, area: true },
+    { key: 'key', label: '用户 Secret Key', secret: true },
+  ],
+  tysms: [
+    { key: 'url', label: '接口地址（短信宝式平台地址）' }, { key: 'sign', label: '短信签名（带不带【】均可）' },
+    { key: 'content_template', label: '短信文案模板（{code}/{ttl} 占位，留空用默认）', optional: true, area: true },
+    { key: 'user', label: '平台 keyID', secret: true }, { key: 'pass', label: '平台 keySecret', secret: true },
+  ],
 }
 const smsProviders = ref<any[]>([])
 const smsAvailable = ref<string[]>([])
@@ -150,6 +167,7 @@ const smsSaving = ref(false)
 const smsFieldSpecs = () => SMS_FIELD_SPECS[smsForm.provider] || []
 const smsChannelLabels: Record<string, string> = {
   aliyun: '阿里云', qcloudsms: '腾讯云', submail: '赛邮', huaweicloud: '华为云', smsbao: '短信宝', generic: '通用 HTTP',
+  officesms: '第二办公室', puddingv10sms: '布丁云 v10', tysms: '通用短信宝式',
 }
 
 function pickSmsProvider(p: string) {

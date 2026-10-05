@@ -732,3 +732,17 @@ sms 7 个、oauth 4 个、certification 6 个）在 ShitIDC 都有对应实现�
 加解密实现口径与官方 PHP 示例逐项对齐（43 位 EncodingAESKey、IV=密钥前 16 字节、
 PKCS7 块大小 32、明文结构 16 随机 + 4 长度 + msg + receiveid），并有
 「密文往返 + 篡改签名拒绝」的单元测试钉死。
+
+### 10.3 短信通道补齐（`internal/sms`）
+
+§8 对齐了安装目录里的 6 个可用短信通道；CBAP 插件包还带 3 个明文插件：
+
+| 通道 | 协议 | 关键点 |
+|---|---|---|
+| `officesms` 第二办公室 | POST open.2office.cn `Accounts/{account}/Sms/SendSms?sign=md5(account+authCode+timestamp)` | Authorization 头是 `大写(base64(account:timestamp))`；成功判据 `code=="0000000"`。参考实现有两处笔误：appId 取的是不存在的 `config["appid"]`（应为 account）；`processSendResult` 的状态赋值是无效表达式导致永远判失败——按正确语义实现并在测试里钉死 |
+| `puddingv10sms` 布丁云 v10 | POST sms.idcbdy.cn/sendApi 表单 | `key=md5(secretKey)`；成功判据 `code==1` 是 PHP 松散比较，数字 1 与字符串 "1" 都算成功 |
+| `tysms` 通用短信宝式 | GET `{url}?u=&p=md5(pass)&m=&c=` | 与短信宝同构的裸文本状态码；除常规错误码外，原实现的 `statusStr` 还挂着两个 uint64 溢出码（参数不全 / 服务器空间不支持），真实平台会返回，照收 |
+
+三者的短信文案都走 `【签名】+ 模板渲染`（`content_template` 可选，占位符
+`{code}`/`{ttl}`）；凭据字段（authCode / Secret Key / keySecret）继续加密入库，
+后台「短信通道」面板按通道渲染对应表单。
