@@ -969,7 +969,7 @@ CBAP 仓库 `plugins/addon/` 下 30 个 zip 经逐个检查：**包内全部 `.p
 | CreditLimit | 授信：消费记录、混合支付 | 已对齐（授信账户 + 后台授信管理） |
 | CycleArtificialOrder | 人工订单：调价、批量、子项调价 | 已对齐（§10.23） |
 | EContract | 电子合同：模板/签署/邮寄 | 未落地（§10.13 已声明跳过） |
-| EmailNoticeAdmin | 管理员邮件通知：接口+模板+收件人 | 部分（邮件通道/模板已有；事件通知管理员未落地） |
+| EmailNoticeAdmin | 管理员邮件通知：接口+模板+收件人 | 已对齐（§10.25） |
 | EventPromotion | 促销：满减/百分比、时间窗 | 已对齐（§10.22） |
 | FlowPacket | 流量包管理 | 未落地 |
 | HostTransfer | 主机转移 | 未落地 |
@@ -1216,3 +1216,24 @@ CBAP 包 `addon/IdcsmartInvoice.zip` 的 PHP（controller/model/validate/auth/ro
 - 后台「查看快递单照片」对 OSS 存储返回签名图片地址，本机存储则按附件下载处理。
 
 验证：`gofmt` / `go build ./...` / `go vet` / `vue-tsc --noEmit`。
+
+### 10.25 EmailNoticeAdmin 插件（管理员邮件通知）（本轮补齐）
+
+CBAP 包 `addon/EmailNoticeAdmin.zip` 主类加密，前端资产可读：表格列为 `name_lang`（动作名称）/ `email_name`（邮件接口）/ `email_template`（邮件模板）/ `notify_personnel`（通知人员，管理员多选）/ `email_enable`（启用开关）；接口 `GET /email_notice_admin` 列表、`PUT /email_notice_admin` 保存，前端校验「选了邮件接口必须选邮件模板」。本轮按该契约落地「邮件通知」：
+
+| 维度 | 参考实现 | ShitIDC 落地 |
+|---|---|---|
+| 行来源 | 插件动作清单 | 事件总线 20 个核心事件（internal/events 清单，附中文动作名） |
+| 邮件接口 | 插件邮件通道列表 | mail_providers 通道下拉；留空 = 跟随系统默认通道 / 内置 SMTP，选中后按该通道发送（队列载荷带 provider） |
+| 邮件模板 | 插件邮件模板列表 | mail_templates 下拉；正文支持 {{占位符}}（event / event_name / time 与事件字段，另有 uid、user_email 等别名） |
+| 通知人员 | 插件管理员树 | 持有非 customer 角色的员工账号（多选，带角色名展示） |
+| 校验 | 选了 email_name 必须选 email_template | 服务端同规则：启用必须选模板与通知人员；选了接口必须选模板 |
+| 后台接口 | GET /email_notice_admin、PUT /email_notice_admin | /admin/email-notice-admin（GET / PUT，`email_notice.manage` 权限 + CSRF + 审计） |
+| 发送时机 | 插件钩子 | internal/notify 订阅事件总线，server / worker 两端都接线；异步发送，失败只记日志不影响业务 |
+| 后台页面 | 插件自带管理页 | /admin/email-notice「邮件通知」页（动作 / 接口 / 模板 / 人员 / 启用 + 保存） |
+| 迁移 | — | 040_email_notice_admin.sql（email_notice.manage 权限，后台角色自动授权） |
+
+说明：注册验证、工单回复等站内自有邮件是各自流程直发，不受此配置影响；本插件只增加「事件 → 给管理员发通知邮件」这条可配置通道。
+
+验证：`gofmt` / `go build ./...` / `go vet ./...` 与 `npx vue-tsc --noEmit` 全部通过。
+
