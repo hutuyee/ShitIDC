@@ -196,6 +196,10 @@ func NewRouter(a *App) *gin.Engine {
 			authed.POST("/flow-packets/:id/purchase", a.require("service.read"), a.csrf(), a.purchaseFlowPacket)
 			authed.POST("/flow-packets/orders/:id/pay", a.require("service.read"), a.csrf(), a.payFlowPacketOrder)
 			authed.POST("/flow-packets/orders/:id/cancel", a.require("service.read"), a.csrf(), a.cancelFlowPacketOrder)
+			// 客户关怀站内信（对齐魔方 ClientCare 插件）
+			authed.GET("/client-care/mails", a.listMyClientCareMails)
+			authed.GET("/client-care/mails/:id", a.getMyClientCareMail)
+			authed.POST("/client-care/mails/:id/read", a.csrf(), a.readMyClientCareMail)
 			authed.GET("/tickets", a.require("ticket.read"), a.listTickets)
 			authed.POST("/tickets", a.require("ticket.write"), a.csrf(), a.createTicket)
 			authed.GET("/tickets/:id", a.require("ticket.read"), a.ticketDetail)
@@ -568,6 +572,14 @@ func (a *App) registerAdminRoutes(g *gin.RouterGroup) {
 	g.DELETE("/flow-packets/:id", a.require("flow_packet.manage"), a.csrf(), a.adminDeleteFlowPacket)
 	g.GET("/flow-packet-orders", a.require("flow_packet.manage"), a.adminListFlowPacketOrders)
 	g.DELETE("/flow-packet-orders/:id", a.require("flow_packet.manage"), a.csrf(), a.adminDeleteFlowPacketOrder)
+	// 客户关怀（对齐魔方 ClientCare 插件）
+	g.GET("/client-care", a.require("client_care.manage"), a.adminListClientCareJobs)
+	g.POST("/client-care", a.require("client_care.manage"), a.csrf(), a.adminCreateClientCareJob)
+	g.PUT("/client-care/:id/status", a.require("client_care.manage"), a.csrf(), a.adminSetClientCareJobStatus)
+	g.DELETE("/client-care/:id", a.require("client_care.manage"), a.csrf(), a.adminDeleteClientCareJob)
+	g.POST("/client-care/recipients", a.require("client_care.manage"), a.csrf(), a.adminClientCareRecipients)
+	g.GET("/client-care/options", a.require("client_care.manage"), a.adminClientCareOptions)
+	g.GET("/client-care/users", a.require("client_care.manage"), a.adminClientCareUsers)
 }
 
 func requestID() gin.HandlerFunc {

@@ -155,6 +155,25 @@ func main() {
 			}
 		})
 	})
+	// 客户关怀（对齐魔方 ClientCare 插件）：到点把站内信写进用户收件箱并推进任务，
+	// 邮件类投递交给 mail.send 队列按指定通道发送。
+	_, _ = c.AddFunc("@every 1m", func() {
+		withLock("scheduler:client-care", 50*time.Second, func(ctx context.Context) {
+			deliveries, err := st.RunDueClientCareJobs(ctx, 20)
+			if err != nil {
+				log.Printf("client care run: %v", err)
+				return
+			}
+			for _, d := range deliveries {
+				if err := q.MailSendVia(d.Email, d.Subject, d.Content, d.MailProvider); err != nil {
+					log.Printf("client care mail %s: %v", d.MailPublicID, err)
+				}
+			}
+			if len(deliveries) > 0 {
+				log.Printf("client care delivered %d mail(s)", len(deliveries))
+			}
+		})
+	})
 	_, _ = c.AddFunc("30 4 * * *", func() {
 		withLock("scheduler:session-cleanup", 300*time.Second, func(ctx context.Context) {
 			n, err := st.CleanupExpiredSessions(ctx, 7)
