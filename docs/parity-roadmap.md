@@ -965,7 +965,7 @@ CBAP 仓库 `plugins/addon/` 下 30 个 zip 经逐个检查：**包内全部 `.p
 | AbnormalInspectionRecords | 异常记录：关联产品、标签、导出 | 未落地 |
 | ClientCare | 客户关怀：邮件/站内信、周期推送、指定用户 | 未落地 |
 | ClientCustomField | 客户自定义字段（管理列表/申请） | 未落地（站内仅有商品自定义字段） |
-| CostPay | 支出记录：来源/主体/金额/日期 | 未落地 |
+| CostPay | 支出记录：来源/主体/金额/日期 | 已对齐（§10.17） |
 | CreditLimit | 授信：消费记录、混合支付 | 已对齐（授信账户 + 后台授信管理） |
 | CycleArtificialOrder | 人工订单：调价、批量、子项调价 | 未落地 |
 | EContract | 电子合同：模板/签署/邮寄 | 未落地（§10.13 已声明跳过） |
@@ -1016,5 +1016,30 @@ CBAP 包 `addon/ProductCashback.zip` 主类加密，但 `template/admin/api/inde
 - 「可返现期限」= 购买后 N 天内（0=永久）：超期订单不返现；页面按「购买后 N 天内 / 永久」展示；
 - 返现即时到账（支付成功即入账），钱包流水 reference_type=cashback，用户账单页可见「商品返现」入账记录；
 - 多币种：按订单币种等额入账（原插件为单币种系统，无汇率换算语义）；该币种无钱包账户时跳过、不影响支付。
+
+验证：`gofmt` / `go build ./...` / `go vet` / `vue-tsc --noEmit`。
+
+### 10.17 CostPay 插件（成本支出）（本轮补齐）
+
+CBAP 包 `addon/CostPay.zip` 主类（`controller/model/validate` 与语言包）为 ionCube 加密，但前端资产完全可读：`template/admin/js/order_cost.js`、`template/admin/api/client.js`、`template/admin/lang.js`、`order_cost.html`，接口契约、字段、权限点与排序语义均取自这些文件。
+
+| 维度 | 参考实现（插件前端契约） | ShitIDC 落地 |
+|---|---|---|
+| 支出字段 | name 支出名称、owner 所属主体、cost 支出金额、cost_time 支出日期（Unix 秒）、notes 备注（≤200 字）、self_defined_field 字典 | `order_cost_pays` 表（031 迁移）：name/owner/cost_cents/cost_time/notes + `order_cost_pay_values` 存字段值；金额落「分」 |
+| 支出接口 | GET/POST `/order/{id}/cost_pay`、GET/PUT/DELETE `/cost_pay/{id}` | `/admin/orders/:id/cost-pay`、`/admin/cost-pay/:id`（finance.report + CSRF + 审计） |
+| 列表筛选 | page/limit、keywords（名称/备注）、owner、支出日期区间、最近记录时间区间 | 同名参数：keywords/owner/start_cost_time/end_cost_time/start_create_time/end_create_time（Unix 秒或 RFC3339） |
+| 列表返回 | list、count、owner（主体候选）、self_defined_field（字段数组） | 同构返回，另附 order 摘要；每条记录带 `self_defined_field` 值字典（键为字段 id） |
+| 自定义字段 | field_name、field_type（text/dropdown）、is_required、field_option（英文逗号分隔）、show_list 列表展示开关、拖动排序（`prev_id`，0=最前） | `/admin/cost-pay/self-defined-field` 五件套 + `/show-list` + `/drag`；排序服务端按「移到 prev 之后」重排权重 |
+| 记录人 | create_time 列展示 admin_name | admin_id 关联 users，列表返回 admin_name；创建/修改/删除写审计日志 |
+| 看板 widget | AddonCostPayToday / ThisMonth / ThisYear / ThisYearCost（加密不可读，按名称口径） | `/admin/cost-pay/summary` 按币种汇总今日/本月/今年支出，页面「成本支出」顶部展示 |
+| 后台页面 | 插件挂在订单详情 Tab 内 | `/admin/order-costs?order_id=`：订单摘要 + 支出列表（动态字段列）+ 新增/编辑弹窗 + 字段管理弹窗；订单中心每行「成本支出」入口 |
+
+口径说明：
+
+- 金额：插件前端以「元」小数提交与展示，本站库内与接口均用「分」整数（`cost_cents`），页面换算展示；接口同时兼容 `cost`（元，小数）入参，方便按插件契约直连；
+- 支出日期为必填；列表按支出日期倒序；自定义字段的「必填」在服务端强制校验，下拉字段值必须在选项内（加密的 Validate 类无法比对，按最保守解释实现）；
+- 字段排序：插件用前端拖动 + `prev_id`；页面提供「上移/下移」按钮，调用同一 `/drag` 语义（移到目标前一位之后），服务端重排全量权重，避免权重碰撞；
+- 时间口径（今日/本月/今年）沿用站内统计约定：PostgreSQL `date_trunc` 取数据库时区（UTC）；
+- 插件权限点（auth_addon_cost_pay_show_tab/create/update/delete/field_manage）对应站内统一权限 `finance.report`（成本属财务敏感数据，与「财务统计」「导出中心」同权限）。
 
 验证：`gofmt` / `go build ./...` / `go vet` / `vue-tsc --noEmit`。
