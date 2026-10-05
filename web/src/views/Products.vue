@@ -22,6 +22,10 @@ const couponCode = ref('')
 const couponDiscount = ref(0)
 const couponChecking = ref(false)
 const couponMsg = ref('')
+const voucherCode = ref('')
+const voucherDiscount = ref(0)
+const voucherChecking = ref(false)
+const voucherMsg = ref('')
 
 async function checkCoupon() {
   if (!couponCode.value.trim()) { return }
@@ -39,6 +43,22 @@ async function checkCoupon() {
 }
 
 const buyTotalAfterCoupon = computed(() => Math.max(0, buyTotal.value - couponDiscount.value))
+const buyTotalAfterDiscount = computed(() => Math.max(0, buyTotal.value - couponDiscount.value - voucherDiscount.value))
+
+async function checkVoucher() {
+  if (!voucherCode.value.trim()) { return }
+  voucherChecking.value = true
+  try {
+    const d = dataOf<{ discount_cents: number }>(await api.post('/vouchers/preview', {
+      code: voucherCode.value.trim(), product_id: buyProduct.value.id, billing_cycle: buyCycle.value, quantity: buyQty.value,
+    }))
+    voucherDiscount.value = d.discount_cents
+    voucherMsg.value = '可抵扣 ' + money(d.discount_cents, buyProduct.value.currency)
+  } catch (e: any) {
+    voucherDiscount.value = 0
+    voucherMsg.value = e?.response?.data?.error?.message || '代金券不可用'
+  } finally { voucherChecking.value = false }
+}
 
 async function load() {
   const [p, g] = await Promise.all([
@@ -53,6 +73,7 @@ async function openBuy(p: any) {
   buyProduct.value = p
   buyQty.value = 1
   couponCode.value = ''; couponDiscount.value = 0; couponMsg.value = ''
+  voucherCode.value = ''; voucherDiscount.value = 0; voucherMsg.value = ''
   try {
     buyPrices.value = dataOf<any[]>(await api.get(`/products/${p.id}/prices`))
   } catch { buyPrices.value = [] }
@@ -99,6 +120,7 @@ async function confirmBuy() {
     await api.post('/orders', {
       product_id: buyProduct.value.id, billing_cycle: buyCycle.value, quantity: buyQty.value,
       coupon_code: couponCode.value.trim() || undefined,
+      voucher_code: voucherCode.value.trim() || undefined,
       currency: buyCurrency.value || undefined,
       config: cfg.config, custom_fields: cfg.custom_fields,
     })
@@ -348,7 +370,15 @@ onMounted(load)
           </div>
           <small v-if="couponMsg" :style="{ color: couponDiscount > 0 ? '#1d9e64' : '#cf3030' }">{{ couponMsg }}</small>
         </div>
-        <div class="buy-total"><span>合计（下单时后端按最新价格重算）</span><strong>{{ money(buyTotalAfterCoupon, buyPrices.find(x => x.billing_cycle === buyCycle)?.currency || buyProduct.currency) }}</strong></div>
+        <div>
+          <b class="muted" style="font-size:12px">代金券</b>
+          <div class="row" style="gap:8px;margin-top:6px">
+            <input v-model="voucherCode" class="catalog-search" style="flex:1" placeholder="输入 8 位代金券码（可选）" @change="checkVoucher" />
+            <NButton secondary :loading="voucherChecking" @click="checkVoucher">验证</NButton>
+          </div>
+          <small v-if="voucherMsg" :style="{ color: voucherDiscount > 0 ? '#1d9e64' : '#cf3030' }">{{ voucherMsg }}</small>
+        </div>
+        <div class="buy-total"><span>合计（下单时后端按最新价格重算）</span><strong>{{ money(buyTotalAfterDiscount, buyPrices.find(x => x.billing_cycle === buyCycle)?.currency || buyProduct.currency) }}</strong></div>
         <div class="row" style="gap:10px">
           <NButton secondary size="large" style="flex:1" :loading="addingToCart" @click="addToCart">加入购物车</NButton>
           <NButton type="primary" size="large" style="flex:1" :loading="buying" @click="confirmBuy">创建订单</NButton>

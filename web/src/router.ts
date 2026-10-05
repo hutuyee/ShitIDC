@@ -8,6 +8,7 @@ import Orders from './views/Orders.vue'
 import Invoices from './views/Invoices.vue'
 import Cart from './views/Cart.vue'
 import Wallet from './views/Wallet.vue'
+import Vouchers from './views/Vouchers.vue'
 import Services from './views/Services.vue'
 import Tickets from './views/Tickets.vue'
 import TicketDetail from './views/TicketDetail.vue'
@@ -27,6 +28,7 @@ import AdminProducts from './views/AdminProducts.vue'
 import AdminAnnouncements from './views/AdminAnnouncements.vue'
 import AdminStats from './views/AdminStats.vue'
 import AdminCoupons from './views/AdminCoupons.vue'
+import AdminVouchers from './views/AdminVouchers.vue'
 import AdminCashbacks from './views/AdminCashbacks.vue'
 import AdminOrderCosts from './views/AdminOrderCosts.vue'
 import AdminInspectionRecords from './views/AdminInspectionRecords.vue'
@@ -52,6 +54,7 @@ const router = createRouter({ history: createWebHistory(), routes: [
   { path: '/orders', component: Orders },
   { path: '/invoices', component: Invoices },
   { path: '/wallet', component: Wallet },
+  { path: '/vouchers', component: Vouchers },
   { path: '/services', component: Services },
   { path: '/tickets', component: Tickets },
   { path: '/tickets/:id', component: TicketDetail },
@@ -61,6 +64,7 @@ const router = createRouter({ history: createWebHistory(), routes: [
   { path: ADMIN_PATH + '/orders', component: AdminOrders },
   { path: ADMIN_PATH + '/stats', component: AdminStats },
   { path: ADMIN_PATH + '/coupons', component: AdminCoupons },
+  { path: ADMIN_PATH + '/vouchers', component: AdminVouchers },
   { path: ADMIN_PATH + '/cashbacks', component: AdminCashbacks },
   { path: ADMIN_PATH + '/order-costs', component: AdminOrderCosts },
   { path: ADMIN_PATH + '/inspection-records', component: AdminInspectionRecords },

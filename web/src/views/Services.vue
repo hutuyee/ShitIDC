@@ -46,6 +46,7 @@ const upgradePlans = ref<any[]>([])
 const upgradeTarget = ref('')
 const upgradeQuote = ref<any>(null)
 const upgradeBusy = ref(false)
+const upgradeVoucher = ref('')
 
 const planOptions = computed(() => upgradePlans.value.map(pl => ({
   label: pl.product_name + '（' + cycleText(pl.billing_cycle) + '）' +
@@ -58,6 +59,7 @@ async function openUpgrade(s: any) {
   upgradeTarget.value = ''
   upgradeQuote.value = null
   upgradePlans.value = []
+  upgradeVoucher.value = ''
   upgradeOpen.value = true
   try {
     upgradePlans.value = dataOf<any[]>(await api.get(`/services/${s.id}/upgrade-plans`))
@@ -87,6 +89,7 @@ async function confirmUpgrade() {
   try {
     const r = dataOf<any>(await api.post(`/services/${upgradeService.value.id}/upgrade`, {
       product_id: parts[0], billing_cycle: parts[1],
+      voucher_code: upgradeVoucher.value.trim() || undefined,
     }))
     upgradeOpen.value = false
     if (r && r.payable) {
@@ -209,6 +212,10 @@ onMounted(load)
           <div><span>剩余天数</span><b>{{ upgradeQuote.days_remaining }} / {{ upgradeQuote.days_in_cycle }} 天</b></div>
           <div><span>当前方案剩余价值</span><b>{{ money(upgradeQuote.remaining_value_cents, upgradeQuote.currency) }}</b></div>
           <div><span>新方案价格</span><b>{{ money(upgradeQuote.new_price_cents, upgradeQuote.currency) }}</b></div>
+          <div v-if="upgradeQuote.payable">
+            <span>代金券码（可选）</span>
+            <input v-model="upgradeVoucher" class="catalog-search" style="max-width:200px;text-align:right" placeholder="8 位券码" />
+          </div>
           <div class="quote-total">
             <span>{{ upgradeQuote.payable ? '需补差价' : '无需补款' }}</span>
             <b>{{ money(Math.max(0, upgradeQuote.diff_cents), upgradeQuote.currency) }}</b>

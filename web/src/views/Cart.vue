@@ -12,6 +12,7 @@ const loading = ref(false)
 const busyItem = ref('')
 const clearing = ref(false)
 const couponCode = ref('')
+const voucherCode = ref('')
 const checkingOut = ref(false)
 const paying = ref(false)
 const showCheckout = ref(false)
@@ -61,9 +62,13 @@ async function doCheckout() {
   if (!cart.value.count || !cart.value.payable) return
   checkingOut.value = true
   try {
-    checkout.value = dataOf<any>(await api.post('/cart/checkout', { coupon_code: couponCode.value.trim() || undefined }))
+    checkout.value = dataOf<any>(await api.post('/cart/checkout', {
+      coupon_code: couponCode.value.trim() || undefined,
+      voucher_code: voucherCode.value.trim() || undefined,
+    }))
     showCheckout.value = true
     couponCode.value = ''
+    voucherCode.value = ''
     await load()
   } catch (e: any) { message.error(e?.response?.data?.error?.message || '结算失败') }
   finally { checkingOut.value = false }
@@ -135,6 +140,7 @@ onMounted(load)
       <div class="card">
         <div class="row" style="gap:10px;flex-wrap:wrap">
           <input v-model="couponCode" class="catalog-search" style="flex:1;min-width:200px" placeholder="优惠码（可选，结算时核销）" />
+          <input v-model="voucherCode" class="catalog-search" style="flex:1;min-width:200px" placeholder="代金券码（可选，结算时核销）" />
           <NButton secondary :loading="clearing" @click="clearCart">清空购物车</NButton>
         </div>
         <div class="cart-total">

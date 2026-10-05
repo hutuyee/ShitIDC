@@ -71,6 +71,7 @@ function toggleTheme() {
                 <router-link to="/cart">购物车</router-link>
                 <router-link to="/orders">订单</router-link>
                 <router-link to="/wallet">财务</router-link>
+                <router-link to="/vouchers">代金券</router-link>
                 <router-link to="/services">服务</router-link>
                 <router-link to="/tickets">工单</router-link>
                 <router-link to="/referral">推广</router-link>
@@ -105,6 +106,7 @@ function toggleTheme() {
             <router-link v-if="auth.permissions['finance.report']" :to="ADMIN_PATH + '/stats'">财务统计</router-link>
             <router-link v-if="auth.permissions['order.read']" :to="ADMIN_PATH + '/orders'">订单中心</router-link>
             <router-link v-if="auth.permissions['coupon.manage']" :to="ADMIN_PATH + '/coupons'">优惠券</router-link>
+            <router-link v-if="auth.permissions['voucher.manage']" :to="ADMIN_PATH + '/vouchers'">代金券</router-link>
             <router-link v-if="auth.permissions['product.write']" :to="ADMIN_PATH + '/cashbacks'">商品返现</router-link>
             <router-link v-if="auth.permissions['finance.report']" :to="ADMIN_PATH + '/order-costs'">成本支出</router-link>
             <router-link v-if="auth.permissions['agent.manage']" :to="ADMIN_PATH + '/agents'">代理分组</router-link>
