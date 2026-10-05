@@ -646,6 +646,10 @@ ON CONFLICT (transaction_id) DO NOTHING`, userID, orderID, walletTxn, total, cur
 		if _, err := tx.Exec(ctx, `UPDATE orders SET status='completed',paid_at=now(),updated_at=now() WHERE id=$1`, orderID); err != nil {
 			return PayResult{}, err
 		}
+		// 发票费用单支付完成：把关联的发票申请推进到「待审核」。
+		if err := advanceInvoiceFeeOrderTx(ctx, tx, orderID); err != nil {
+			return PayResult{}, err
+		}
 		return PayResult{}, nil
 	}
 	if _, err := tx.Exec(ctx, `UPDATE orders SET status='processing',paid_at=now(),updated_at=now() WHERE id=$1`, orderID); err != nil {
