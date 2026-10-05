@@ -552,6 +552,8 @@ func (a *App) registerAdminRoutes(g *gin.RouterGroup) {
 	g.DELETE("/webhooks/:id", a.require("webhook.manage"), a.csrf(), a.adminDeleteWebhook)
 	g.GET("/webhooks/:id/deliveries", a.require("webhook.manage"), a.adminWebhookDeliveries)
 	g.POST("/services/:id/retry", a.require("service.manage"), a.csrf(), a.adminRetryService)
+	g.GET("/service-transfers", a.require("service.manage"), a.adminListServiceTransfers)
+	g.POST("/service-transfers", a.require("service.manage"), a.csrf(), a.adminTransferService)
 }
 
 func requestID() gin.HandlerFunc {
