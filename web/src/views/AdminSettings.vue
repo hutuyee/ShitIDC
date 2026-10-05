@@ -394,6 +394,62 @@ async function setDefaultCaptcha(id: string) {
 async function deleteCaptcha(id: string) {
   try { await api.delete(`/admin/captcha-providers/${id}`); await loadCaptchaProviders() } catch (e: any) { message.error(e?.response?.data?.error?.message || '删除失败') }
 }
+// ---- 对象存储通道（对应魔方 public/plugins/oss/）----
+const OSS_FIELD_SPECS: Record<string, FieldSpec[]> = {
+  tencentcloud_oss: [
+    { key: 'bucket', label: '存储桶 Bucket（如 mybucket-1250000000）' },
+    { key: 'region', label: '地域 Region（如 ap-guangzhou）' },
+    { key: 'secret_id', label: 'SecretID', secret: true },
+    { key: 'secret_key', label: 'SecretKey', secret: true },
+  ],
+}
+const ossProviders = ref<any[]>([])
+const ossAvailable = ref<string[]>([])
+const ossForm = reactive({ name: '', provider: 'tencentcloud_oss' } as { name: string; provider: string; values: Record<string, string> })
+ossForm.values = {}
+const ossSaving = ref(false)
+const ossFieldSpecs = () => OSS_FIELD_SPECS[ossForm.provider] || []
+const ossChannelLabels: Record<string, string> = { tencentcloud_oss: '腾讯云 COS' }
+function pickOssProvider(p: string) {
+  ossForm.provider = p
+  ossForm.values = {}
+}
+async function loadOssProviders() {
+  try {
+    const d = dataOf<any>(await api.get('/admin/oss-providers'))
+    ossProviders.value = d.providers || []
+    ossAvailable.value = d.available || []
+  } catch { /* ignore */ }
+}
+async function saveOssProvider() {
+  if (!ossForm.name.trim()) { message.warning('请填写通道名称'); return }
+  const config: Record<string, string> = {}
+  const secret: Record<string, string> = {}
+  for (const spec of ossFieldSpecs()) {
+    const v = (ossForm.values[spec.key] || '').trim()
+    if (!v) continue
+    if (spec.secret) secret[spec.key] = v
+    else config[spec.key] = v
+  }
+  ossSaving.value = true
+  try {
+    await api.post('/admin/oss-providers', { name: ossForm.name.trim(), provider: ossForm.provider, config, secret, is_default: ossProviders.value.length === 0 })
+    message.success('对象存储通道已保存')
+    ossForm.name = ''
+    ossForm.values = {}
+    await loadOssProviders()
+  } catch (e: any) { message.error(e?.response?.data?.error?.message || '保存失败') }
+  finally { ossSaving.value = false }
+}
+async function setDefaultOss(id: string) {
+  try { await api.post(`/admin/oss-providers/${id}/default`); await loadOssProviders() } catch (e: any) { message.error(e?.response?.data?.error?.message || '设置失败') }
+}
+async function testOss(id: string) {
+  try { await api.post(`/admin/oss-providers/${id}/test`); message.success('连接正常'); await loadOssProviders() } catch (e: any) { message.error(e?.response?.data?.error?.message || '连接失败') }
+}
+async function deleteOss(id: string) {
+  try { await api.delete(`/admin/oss-providers/${id}`); await loadOssProviders() } catch (e: any) { message.error(e?.response?.data?.error?.message || '删除失败') }
+}
 // ---- 第三方登录（对应魔方 public/plugins/oauth/）----
 const OAUTH_FIELD_SPECS: Record<string, FieldSpec[]> = {
   github: [
@@ -510,7 +566,7 @@ async function load() {
   try {
     templates.value = dataOf<any[]>(await api.get('/admin/mail-templates'))
   } catch { templates.value = [] }
-  await Promise.all([loadSmsProviders(), loadMailProviders(), loadOauthProviders(), loadCertProviders(), loadCaptchaProviders()])
+  await Promise.all([loadSmsProviders(), loadMailProviders(), loadOauthProviders(), loadCertProviders(), loadCaptchaProviders(), loadOssProviders()])
 }
 
 async function save() {
@@ -767,7 +823,41 @@ onMounted(load)
     </section>
 
 <section class="panel">
-      <div class="panel-title-row"><div><h2>第三方登录</h2><span>启用后登录页出现对应按钮；回调地址为 {站点}/api/v1/auth/oauth/{通道}/callback</span></div></div>
+          <section class="panel">
+      <div class="panel-title-row"><div><h2>对象存储</h2><span>工单附件上传后转存对象存储、下载返回 3 分钟签名地址；未配置通道时附件仍存本机</span></div></div>
+      <div class="admin-two-col">
+        <div class="stack">
+          <div class="form-grid">
+            <label><span>通道名称</span><NInput v-model:value="ossForm.name" placeholder="例如：主用-腾讯云 COS" /></label>
+            <label><span>通道类型</span>
+              <select class="native-select" :value="ossForm.provider" @change="pickOssProvider(($event.target as HTMLSelectElement).value)">
+                <option v-for="p in ossAvailable" :key="p" :value="p">{{ ossChannelLabels[p] || p }}（{{ p }}）</option>
+              </select>
+            </label>
+          </div>
+          <div class="form-grid">
+            <label v-for="spec in ossFieldSpecs()" :key="spec.key">
+              <span>{{ spec.label }}<template v-if="spec.secret">（凭据）</template></span>
+              <NInput v-if="spec.secret" v-model:value="ossForm.values[spec.key]" type="password" show-password-on="click" />
+              <NInput v-else v-model:value="ossForm.values[spec.key]" />
+            </label>
+          </div>
+          <NButton type="primary" :loading="ossSaving" @click="saveOssProvider">添加通道</NButton>
+          <div v-if="ossProviders.length" class="stack">
+            <div v-for="p in ossProviders" :key="p.id" class="advanced-row">
+              <div><b>{{ p.name }}</b><small>{{ ossChannelLabels[p.provider] || p.provider }}<template v-if="p.is_default"> · 默认</template><template v-if="p.last_error"> · 最近错误：{{ p.last_error }}</template></small></div>
+              <div class="row" style="gap:8px">
+                <NButton size="small" secondary @click="testOss(p.id)">测试连接</NButton>
+                <NButton v-if="!p.is_default" size="small" secondary @click="setDefaultOss(p.id)">设为默认</NButton>
+                <NButton size="small" quaternary type="error" @click="deleteOss(p.id)">删除</NButton>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+<div class="panel-title-row"><div><h2>第三方登录</h2><span>启用后登录页出现对应按钮；回调地址为 {站点}/api/v1/auth/oauth/{通道}/callback</span></div></div>
       <div class="admin-two-col">
         <div class="stack">
           <div class="form-grid">

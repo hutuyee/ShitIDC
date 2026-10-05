@@ -317,6 +317,12 @@ func (a *App) registerAdminRoutes(g *gin.RouterGroup) {
 	g.POST("/captcha-providers", a.require("settings.manage"), a.csrf(), a.adminCreateCaptchaProvider)
 	g.POST("/captcha-providers/:id/default", a.require("settings.manage"), a.csrf(), a.adminSetDefaultCaptchaProvider)
 	g.DELETE("/captcha-providers/:id", a.require("settings.manage"), a.csrf(), a.adminDeleteCaptchaProvider)
+	// 对象存储通道（工单附件转存；未配置时附件仍存本机）
+	g.GET("/oss-providers", a.require("settings.manage"), a.adminListOssProviders)
+	g.POST("/oss-providers", a.require("settings.manage"), a.csrf(), a.adminCreateOssProvider)
+	g.POST("/oss-providers/:id/default", a.require("settings.manage"), a.csrf(), a.adminSetDefaultOssProvider)
+	g.POST("/oss-providers/:id/test", a.require("settings.manage"), a.csrf(), a.adminTestOssProvider)
+	g.DELETE("/oss-providers/:id", a.require("settings.manage"), a.csrf(), a.adminDeleteOssProvider)
 	// 第三方登录通道
 	g.GET("/oauth-providers", a.require("settings.manage"), a.adminListOAuthProviders)
 	g.POST("/oauth-providers", a.require("settings.manage"), a.csrf(), a.adminSaveOAuthProvider)
