@@ -6,6 +6,8 @@ import AnnouncementDetail from './views/AnnouncementDetail.vue'
 import Products from './views/Products.vue'
 import Orders from './views/Orders.vue'
 import Invoices from './views/Invoices.vue'
+import InvoiceCenter from './views/InvoiceCenter.vue'
+import AdminInvoices from './views/AdminInvoices.vue'
 import Cart from './views/Cart.vue'
 import Wallet from './views/Wallet.vue'
 import Vouchers from './views/Vouchers.vue'
@@ -55,6 +57,7 @@ const router = createRouter({ history: createWebHistory(), routes: [
   { path: '/announcements/:id', component: AnnouncementDetail },
   { path: '/orders', component: Orders },
   { path: '/invoices', component: Invoices },
+  { path: '/invoice', component: InvoiceCenter },
   { path: '/wallet', component: Wallet },
   { path: '/vouchers', component: Vouchers },
   { path: '/services', component: Services },
@@ -69,6 +72,7 @@ const router = createRouter({ history: createWebHistory(), routes: [
   { path: ADMIN_PATH + '/vouchers', component: AdminVouchers },
   { path: ADMIN_PATH + '/promotions', component: AdminPromotions },
   { path: ADMIN_PATH + '/cycle-orders', component: AdminCycleOrders },
+  { path: ADMIN_PATH + '/invoices', component: AdminInvoices },
   { path: ADMIN_PATH + '/cashbacks', component: AdminCashbacks },
   { path: ADMIN_PATH + '/order-costs', component: AdminOrderCosts },
   { path: ADMIN_PATH + '/inspection-records', component: AdminInspectionRecords },
