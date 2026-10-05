@@ -327,7 +327,8 @@ func (s *Store) CompleteOnlinePayment(ctx context.Context, outTradeNo, gatewayTr
 	var renewID string
 	if orderID != nil {
 		var orderStatus string
-		if err := tx.QueryRow(ctx, `SELECT status FROM orders WHERE id=$1`, *orderID).Scan(&orderStatus); err != nil {
+		var orderKind string
+		if err := tx.QueryRow(ctx, `SELECT status,kind FROM orders WHERE id=$1`, *orderID).Scan(&orderStatus, &orderKind); err != nil {
 			return "", 0, nil, "", err
 		}
 		if orderStatus != "unpaid" {
@@ -357,6 +358,16 @@ func (s *Store) CompleteOnlinePayment(ctx context.Context, outTradeNo, gatewayTr
 				return "", 0, nil, "", err
 			}
 			return kind, userID, nil, renewID, nil
+		}
+		if orderKind == "artificial" {
+			// 人工订单不对应商品服务：直接完成订单（不建服务实例）。
+			if _, err := tx.Exec(ctx, `UPDATE orders SET status='completed',paid_at=now(),updated_at=now() WHERE id=$1`, *orderID); err != nil {
+				return "", 0, nil, "", err
+			}
+			if err := tx.Commit(ctx); err != nil {
+				return "", 0, nil, "", err
+			}
+			return kind, userID, nil, "", nil
 		}
 		if _, err := tx.Exec(ctx, `UPDATE orders SET status='processing',paid_at=now(),updated_at=now() WHERE id=$1`, *orderID); err != nil {
 			return "", 0, nil, "", err

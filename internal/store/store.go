@@ -641,6 +641,13 @@ ON CONFLICT (transaction_id) DO NOTHING`, userID, orderID, walletTxn, total, cur
 		}
 		return PayResult{RenewServiceID: renewID}, nil
 	}
+	if kind == "artificial" {
+		// 人工订单（周期账单/发票费用等）不对应商品与服务：直接置完成，不建服务。
+		if _, err := tx.Exec(ctx, `UPDATE orders SET status='completed',paid_at=now(),updated_at=now() WHERE id=$1`, orderID); err != nil {
+			return PayResult{}, err
+		}
+		return PayResult{}, nil
+	}
 	if _, err := tx.Exec(ctx, `UPDATE orders SET status='processing',paid_at=now(),updated_at=now() WHERE id=$1`, orderID); err != nil {
 		return PayResult{}, err
 	}
