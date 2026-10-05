@@ -304,9 +304,15 @@ type CheckoutResult struct {
 // 价格在事务内**重新计算**并写进 checkout_groups.total_cents 作为「约定金额」；
 // 付款时会再比对一次，防止两次读取之间价格被改动。
 func (s *Store) CheckoutCart(ctx context.Context, userID int64, couponCode string) (CheckoutResult, error) {
+	return s.CheckoutCartWithVoucher(ctx, userID, couponCode, "")
+}
+
+// CheckoutCartWithVoucher 与 CheckoutCart 相同，但额外核销一张代金券：
+// 作用于购物车中第一条商品 / 周期匹配的明细（代金券插件对齐）。
+func (s *Store) CheckoutCartWithVoucher(ctx context.Context, userID int64, couponCode, voucherCode string) (CheckoutResult, error) {
 	var out CheckoutResult
 	err := retrySerializable(ctx, orderRetryAttempts, func() error {
-		res, err := s.checkoutCartOnce(ctx, userID, couponCode)
+		res, err := s.checkoutCartOnce(ctx, userID, couponCode, voucherCode)
 		if err != nil {
 			return err
 		}
@@ -316,7 +322,7 @@ func (s *Store) CheckoutCart(ctx context.Context, userID int64, couponCode strin
 	return out, err
 }
 
-func (s *Store) checkoutCartOnce(ctx context.Context, userID int64, couponCode string) (CheckoutResult, error) {
+func (s *Store) checkoutCartOnce(ctx context.Context, userID int64, couponCode, voucherCode string) (CheckoutResult, error) {
 	tx, err := s.DB.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
 	if err != nil {
 		return CheckoutResult{}, err
@@ -356,6 +362,24 @@ WHERE c.user_id=$1 ORDER BY c.created_at, c.id FOR UPDATE OF c`, userID)
 		return CheckoutResult{}, fmt.Errorf("购物车是空的")
 	}
 	currency := lines[0].currency
+	// 代金券：先挑出第一条商品 / 周期匹配的明细；金额与领取状态在核销时再校验。
+	voucherLine := -1
+	voucherCode = strings.TrimSpace(voucherCode)
+	if voucherCode != "" {
+		for i, l := range lines {
+			ok, verr := s.VoucherLineMatches(ctx, voucherCode, l.productID, l.cycle)
+			if verr != nil {
+				return CheckoutResult{}, verr
+			}
+			if ok {
+				voucherLine = i
+				break
+			}
+		}
+		if voucherLine < 0 {
+			return CheckoutResult{}, fmt.Errorf("该代金券不适用于购物车中的商品或计费周期")
+		}
+	}
 	// 捆绑限制：同一结算批次即视为「同时购买」，在整车维度校验。
 	cartProductIDs := make([]string, 0, len(lines))
 	for _, l := range lines {
@@ -380,8 +404,11 @@ VALUES($1,$2,0,0) RETURNING id,public_id::text`, userID, currency).Scan(&groupID
 	serviceIDs := []string{}
 	couponUsed := false
 
-	for _, l := range lines {
+	for i, l := range lines {
 		cfgIn := OrderConfigInput{}
+		if i == voucherLine {
+			cfgIn.VoucherCode = voucherCode
+		}
 		if l.selections != "" && l.selections != "[]" {
 			var choices []ConfigChoice
 			if err := json.Unmarshal([]byte(l.selections), &choices); err != nil {

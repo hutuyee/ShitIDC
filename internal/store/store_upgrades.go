@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -187,6 +188,12 @@ func (s *Store) QuoteUpgrade(ctx context.Context, userID int64, servicePublicID,
 // RequestUpgrade 创建一次升降级：差价为 0 或负数时立即生效；为正时生成升级订单等待付款。
 // 第二个返回值非空表示需要付款的订单号。
 func (s *Store) RequestUpgrade(ctx context.Context, userID int64, servicePublicID, toProductPublicID, toCycle string) (UpgradeQuote, string, error) {
+	return s.RequestUpgradeWithVoucher(ctx, userID, servicePublicID, toProductPublicID, toCycle, "")
+}
+
+// RequestUpgradeWithVoucher 与 RequestUpgrade 相同，但补差价可用一张代金券抵扣
+// （受券的 upgrade_use 限制，代金券插件对齐）。
+func (s *Store) RequestUpgradeWithVoucher(ctx context.Context, userID int64, servicePublicID, toProductPublicID, toCycle, voucherCode string) (UpgradeQuote, string, error) {
 	tx, err := s.DB.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
 	if err != nil {
 		return UpgradeQuote{}, "", err
@@ -251,20 +258,38 @@ func (s *Store) RequestUpgrade(ctx context.Context, userID int64, servicePublicI
 		}
 		return quote, "", nil
 	}
+	// 代金券抵扣补差价（核销记录挂到升级订单上）。
+	payTotal := diff
+	voucherDiscountCents := int64(0)
+	voucherGrantID := int64(0)
+	if strings.TrimSpace(voucherCode) != "" {
+		d, gid, verr := voucherCheck(ctx, tx, userID, voucherCode, toProductID, toCycle, diff, "upgrade", true)
+		if verr != nil {
+			return UpgradeQuote{}, "", verr
+		}
+		voucherDiscountCents, voucherGrantID = d, gid
+		payTotal -= d
+		if payTotal < 0 {
+			payTotal = 0
+		}
+	}
 	var orderID int64
 	var orderPublic string
-	if err := tx.QueryRow(ctx, `INSERT INTO orders(user_id,status,kind,total_cents,currency,upgrade_id,kind_detail) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id,public_id::text`,
-		userID, "unpaid", "upgrade", diff, base.currency, upgradeID, "upgrade").Scan(&orderID, &orderPublic); err != nil {
+	if err := tx.QueryRow(ctx, `INSERT INTO orders(user_id,status,kind,total_cents,currency,upgrade_id,kind_detail,discount_cents) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id,public_id::text`,
+		userID, "unpaid", "upgrade", payTotal, base.currency, upgradeID, "upgrade", voucherDiscountCents).Scan(&orderID, &orderPublic); err != nil {
+		return UpgradeQuote{}, "", err
+	}
+	if err := markVoucherUsedTx(ctx, tx, voucherGrantID, orderID); err != nil {
 		return UpgradeQuote{}, "", err
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO order_items(order_id,product_id,product_name,billing_cycle,unit_price_cents,quantity,subtotal_cents,provider_type) VALUES($1,$2,$3,$4,$5,1,$5,$6)`, orderID, toProductID, toName+"（升级）", toCycle, diff, "manual"); err != nil {
 		return UpgradeQuote{}, "", err
 	}
 	var invoiceID int64
-	if err := tx.QueryRow(ctx, `INSERT INTO invoices(order_id,user_id,status,total_cents,currency,due_at) VALUES($1,$2,$3,$4,$5,now()+interval '24 hours') RETURNING id`, orderID, userID, "unpaid", diff, base.currency).Scan(&invoiceID); err != nil {
+	if err := tx.QueryRow(ctx, `INSERT INTO invoices(order_id,user_id,status,total_cents,currency,due_at) VALUES($1,$2,$3,$4,$5,now()+interval '24 hours') RETURNING id`, orderID, userID, "unpaid", payTotal, base.currency).Scan(&invoiceID); err != nil {
 		return UpgradeQuote{}, "", err
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO invoice_items(invoice_id,description,amount_cents) VALUES($1,$2,$3)`, invoiceID, toName+" 升级补差价", diff); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO invoice_items(invoice_id,description,amount_cents) VALUES($1,$2,$3)`, invoiceID, toName+" 升级补差价", payTotal); err != nil {
 		return UpgradeQuote{}, "", err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE service_upgrades SET order_id=$2,updated_at=now() WHERE id=$1`, upgradeID, orderID); err != nil {

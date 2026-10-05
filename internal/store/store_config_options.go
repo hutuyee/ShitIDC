@@ -293,6 +293,8 @@ func findConfigValue(opt model.ConfigOption, valueID string) (model.ConfigOption
 type OrderConfigInput struct {
 	Choices      []ConfigChoice    `json:"config"`
 	CustomFields map[string]string `json:"custom_fields"`
+	// VoucherCode 是结算时使用的代金券码（可选，代金券插件对齐）。
+	VoucherCode string `json:"voucher_code"`
 }
 
 // resolveConfigTx 在事务内完成三件事：

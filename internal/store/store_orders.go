@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strconv"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 
@@ -78,6 +79,12 @@ const cycleIntervalSQL = `CASE COALESCE($1,'monthly')
 // still-renewable service. On payment the service's expiry is extended
 // instead of provisioning a new service row.
 func (s *Store) CreateRenewalOrder(ctx context.Context, userID int64, servicePublicID string) (model.Order, error) {
+	return s.CreateRenewalOrderWithVoucher(ctx, userID, servicePublicID, "")
+}
+
+// CreateRenewalOrderWithVoucher 与 CreateRenewalOrder 相同，但可用一张代金券
+// 抵扣续费金额（受券的 renew_use 限制，代金券插件对齐）。
+func (s *Store) CreateRenewalOrderWithVoucher(ctx context.Context, userID int64, servicePublicID, voucherCode string) (model.Order, error) {
 	tx, err := s.DB.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
 	if err != nil {
 		return model.Order{}, err
@@ -121,10 +128,28 @@ WHERE s.public_id=$1 AND s.user_id=$2 FOR UPDATE OF s`, servicePublicID, userID)
 	} else if err != nil {
 		return model.Order{}, err
 	}
+	// 代金券抵扣（核销记录挂到续费订单上）。
+	total := price
+	voucherDiscountCents := int64(0)
+	voucherGrantID := int64(0)
+	if strings.TrimSpace(voucherCode) != "" {
+		d, gid, verr := voucherCheck(ctx, tx, userID, voucherCode, productID, cycle, price, "renew", true)
+		if verr != nil {
+			return model.Order{}, verr
+		}
+		voucherDiscountCents, voucherGrantID = d, gid
+		total -= d
+		if total < 0 {
+			total = 0
+		}
+	}
 	var o model.Order
-	if err := tx.QueryRow(ctx, `INSERT INTO orders(user_id,status,kind,total_cents,currency,renew_service_id) VALUES($1,'unpaid','renewal',$2,$3,$4)
-RETURNING id,public_id::text,user_id,status,kind,total_cents,currency,created_at`, userID, price, currency, serviceID).
+	if err := tx.QueryRow(ctx, `INSERT INTO orders(user_id,status,kind,total_cents,currency,renew_service_id,discount_cents) VALUES($1,'unpaid','renewal',$2,$3,$4,$5)
+RETURNING id,public_id::text,user_id,status,kind,total_cents,currency,created_at`, userID, total, currency, serviceID, voucherDiscountCents).
 		Scan(&o.ID, &o.PublicID, &o.UserUID, &o.Status, &o.Kind, &o.TotalCents, &o.Currency, &o.CreatedAt); err != nil {
+		return model.Order{}, err
+	}
+	if err := markVoucherUsedTx(ctx, tx, voucherGrantID, o.ID); err != nil {
 		return model.Order{}, err
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO order_items(order_id,product_id,product_name,billing_cycle,unit_price_cents,quantity,subtotal_cents,provider_id,provider_type,provider_product_ref)
@@ -132,10 +157,10 @@ VALUES($1,$2,$3,$4,$5,1,$5,$6,$7,$8)`, o.ID, productID, productName+"（续费�
 		return model.Order{}, err
 	}
 	var invoiceID int64
-	if err := tx.QueryRow(ctx, `INSERT INTO invoices(order_id,user_id,status,total_cents,currency,due_at) VALUES($1,$2,'unpaid',$3,$4,now()+interval '24 hours') RETURNING id`, o.ID, userID, price, currency).Scan(&invoiceID); err != nil {
+	if err := tx.QueryRow(ctx, `INSERT INTO invoices(order_id,user_id,status,total_cents,currency,due_at) VALUES($1,$2,'unpaid',$3,$4,now()+interval '24 hours') RETURNING id`, o.ID, userID, total, currency).Scan(&invoiceID); err != nil {
 		return model.Order{}, err
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO invoice_items(invoice_id,description,amount_cents) VALUES($1,$2,$3)`, invoiceID, productName+" 续费 / "+cycle, price); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO invoice_items(invoice_id,description,amount_cents) VALUES($1,$2,$3)`, invoiceID, productName+" 续费 / "+cycle, total); err != nil {
 		return model.Order{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
