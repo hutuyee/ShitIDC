@@ -109,6 +109,8 @@ function toggleTheme() {
             <router-link v-if="auth.permissions['security.audit.read']" :to="ADMIN_PATH + '/logs'">日志中心</router-link>
             <router-link v-if="auth.permissions['wallet.adjust']" :to="ADMIN_PATH + '/payments'">支付方式</router-link>
             <router-link v-if="auth.permissions['webhook.manage']" :to="ADMIN_PATH + '/webhooks'">Webhook 推送</router-link>
+            <router-link v-if="auth.permissions['finance.report']" :to="ADMIN_PATH + '/export'">导出中心</router-link>
+            <router-link v-if="auth.permissions['service.manage']" :to="ADMIN_PATH + '/expired-ip-logs'">到期IP记录</router-link>
             <router-link v-if="auth.permissions['provider.manage']" :to="ADMIN_PATH + '/settings'">邮件 / SMTP</router-link>
             <router-link v-if="auth.permissions['provider.manage']" :to="ADMIN_PATH + '/providers'">供应商 / 上游</router-link>
             <div class="grow"></div>
