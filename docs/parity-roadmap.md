@@ -972,7 +972,7 @@ CBAP 仓库 `plugins/addon/` 下 30 个 zip 经逐个检查：**包内全部 `.p
 | EmailNoticeAdmin | 管理员邮件通知：接口+模板+收件人 | 已对齐（§10.25） |
 | EventPromotion | 促销：满减/百分比、时间窗 | 已对齐（§10.22） |
 | FlowPacket | 流量包管理 | 未落地 |
-| HostTransfer | 主机转移 | 未落地 |
+| HostTransfer | 主机转移 | 已对齐（§10.26） |
 | IdcsmartClientLevel | 客户等级：三级、商品可选、批量保存 | 已对齐（客户组差异定价，口径等价） |
 | IdcsmartDomain | 域名 | 跳过（§9.4） |
 | IdcsmartInvoice | 开票申请：抬头/快递/邮寄/驳回 | 已对齐（§10.24） |
@@ -1234,6 +1234,26 @@ CBAP 包 `addon/EmailNoticeAdmin.zip` 主类加密，前端资产可读：表格
 | 迁移 | — | 040_email_notice_admin.sql（email_notice.manage 权限，后台角色自动授权） |
 
 说明：注册验证、工单回复等站内自有邮件是各自流程直发，不受此配置影响；本插件只增加「事件 → 给管理员发通知邮件」这条可配置通道。
+
+验证：`gofmt` / `go build ./...` / `go vet ./...` 与 `npx vue-tsc --noEmit` 全部通过。
+
+
+### 10.26 HostTransfer 插件（产品转移）（本轮补齐）
+
+CBAP 包 `addon/HostTransfer.zip` 主类加密，前端资产可读：后台页展示产品转移记录（产品ID / 商品名称 / 商品标识 / 原始用户 / 目标用户 / 迁移时间 / 操作人 / 备注），接口 `GET /host_transfer_log`；转移动作在「用户详情 - 产品信息页」执行，语言包明确「关联产品自动一起迁移」「不迁移订单信息」「VPC/安全组/付费镜像同步到目标用户」。本轮按该契约落地「产品转移」：
+
+| 维度 | 参考实现 | ShitIDC 落地 |
+|---|---|---|
+| 转移对象 | 产品（服务） | 服务（services），待开通 / 生效 / 暂停 / 开通失败等未删除状态都可以转移 |
+| 关联产品 | 同单关联商品自动一起迁移 | 同一订单下仍属于原用户的未删除服务整单迁移（改 user_id） |
+| 订单信息 | 不迁移 | 订单、账单、支付记录保持原用户归属不动 |
+| VPC/安全组/镜像 | 同步到目标用户 | 本站无这三类资源，无需镜像同步 |
+| 记录字段 | 产品ID/商品名称/商品标识/双方用户/时间/操作人/备注 | service_transfers 表（041 迁移）：service_id、from/to 用户、operator、remark、created_at |
+| 后台接口 | GET /host_transfer_log | GET/POST /admin/service-transfers（service.manage 权限 + CSRF + 审计；POST 校验目标用户为正常状态，拒绝转给当前所有者与已删除产品） |
+| 发起位置 | 用户详情-产品信息页 | 「服务管理」行操作「转移」与「用户详情 → 机器」tab 的「转移」按钮，共用 ServiceTransferModal（选目标用户 + 备注） |
+| 后台页面 | 插件自带记录页 | /admin/service-transfers「产品转移」页：关键词查询 + 刷新；页面提示发起位置 |
+
+说明：商品标识取 products.provider_product_ref（本站没有独立的商品 code 列）；目标用户按 UID / UUID / 邮箱解析；同一产品多次转移会分别留记录。
 
 验证：`gofmt` / `go build ./...` / `go vet ./...` 与 `npx vue-tsc --noEmit` 全部通过。
 
