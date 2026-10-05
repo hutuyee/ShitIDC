@@ -749,3 +749,23 @@ PKCS7 块大小 32、明文结构 16 随机 + 4 长度 + msg + receiveid），�
 三者的短信文案都走 `【签名】+ 模板渲染`（`content_template` 可选，占位符
 `{code}`/`{ttl}`）；凭据字段（authCode / Secret Key / keySecret）继续加密入库，
 后台「短信通道」面板按通道渲染对应表单。
+
+### 10.4 人机验证通道补齐（`internal/captcha`）
+
+魔方 `public/plugins/captcha/` 是「内置图形验证码 + 第三方通道」的结构。ShitIDC 原先
+只有「有 Redis 就启用」的内置图形验证码；现在把第三方通道做成与短信/邮件同构的
+注册表（`captcha_providers` 表 + 后台「人机验证」面板）：**启用中的通道优先，未配置
+通道时原样回退内置图形验证码**，老部署行为不变。
+
+| 通道 | 协议 | 关键点 |
+|---|---|---|
+| `google_captcha` 谷歌 reCAPTCHA | 前端注入脚本显式渲染 + 服务端 POST 校验 | 默认走 `www.recaptcha.net`（国内可直连）；请求体 `secret` / `response` / `remoteip`，`success===true` 才算通过；错误码翻成人话（超时 / 重复使用 / 域名不匹配等） |
+| `tencent_captcha` 腾讯云验证码 | 前端 TCaptcha 弹窗 + 服务端 TC3-HMAC-SHA256 调用 `DescribeCaptchaResult` | 签名与短信同源，公共实现提到 `internal/tc3`（qcloudsms 改为复用，各自固定向量测试钉死签名）；判据 `CaptchaCode==1`，`Ticket` / `UserIp` / `Randstr` / `CaptchaAppId`（int64）/ `AppSecretKey` 一起提交 |
+
+票据都是单次的：登录、注册、发送邮箱验证码、找回密码四个入口验票失败统一返回
+`CAPTCHA_INVALID`，前端 `CaptchaInput.vue` 按 `provider` 重新出题（谷歌 `reset`、
+腾讯重新弹窗、内置点图刷新）；组件通过 `/auth/captcha` 拿到公开参数
+（`site_key` / `captcha_app_id`）或内置题的 `id` + `svg`。管理端字段元数据与
+邮件/短信通道一致：`secret=true` 的字段（谷歌 SecretKey；腾讯 SecretID / SecretKey /
+AppSecretKey）进加密凭据，其余进普通配置。
+

@@ -33,16 +33,18 @@ const (
 // sendSMSCode 发送短信验证码。默认用于注册；登录/绑定等场景通过 purpose 区分。
 func (a *App) sendSMSCode(c *gin.Context) {
 	var in struct {
-		Phone      string `json:"phone"`
-		Purpose    string `json:"purpose"`
-		CaptchaID  string `json:"captcha_id"`
-		CaptchaAns string `json:"captcha_answer"`
+		Phone          string `json:"phone"`
+		Purpose        string `json:"purpose"`
+		CaptchaID      string `json:"captcha_id"`
+		CaptchaAns     string `json:"captcha_answer"`
+		CaptchaToken   string `json:"captcha_token"`
+		CaptchaRandstr string `json:"captcha_randstr"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
 		httpx.Fail(c, 400, "INVALID_REQUEST", "请求格式错误")
 		return
 	}
-	if !a.verifyCaptcha(c, in.CaptchaID, in.CaptchaAns) {
+	if !a.verifyCaptcha(c, in.CaptchaID, in.CaptchaAns, in.CaptchaToken, in.CaptchaRandstr) {
 		return
 	}
 	phone := normalizeSMSCode(in.Phone)

@@ -285,6 +285,65 @@ async function testMailChannel(id: string) {
   try { await api.post(`/admin/mail-providers/${id}/test`); message.success('测试邮件已发送到你的账号邮箱') } catch (e: any) { message.error(e?.response?.data?.error?.message || '发送失败') }
 }
 
+// ---- 人机验证通道（对应魔方 public/plugins/captcha/）----
+const CAPTCHA_FIELD_SPECS: Record<string, FieldSpec[]> = {
+  google_captcha: [
+    { key: 'site_key', label: 'SiteKey（前端站点密钥）' },
+    { key: 'secret_key', label: 'SecretKey', secret: true },
+  ],
+  tencent_captcha: [
+    { key: 'captcha_app_id', label: 'CaptchaAppId（数字 AppID）' },
+    { key: 'secret_id', label: 'SecretID', secret: true },
+    { key: 'secret_key', label: 'SecretKey', secret: true },
+    { key: 'app_secret_key', label: 'AppSecretKey', secret: true },
+  ],
+}
+const captchaProviders = ref<any[]>([])
+const captchaAvailable = ref<string[]>([])
+const captchaForm = reactive({ name: '', provider: 'google_captcha' } as { name: string; provider: string; values: Record<string, string> })
+captchaForm.values = {}
+const captchaSaving = ref(false)
+const captchaFieldSpecs = () => CAPTCHA_FIELD_SPECS[captchaForm.provider] || []
+const captchaChannelLabels: Record<string, string> = {
+  google_captcha: '谷歌 reCAPTCHA', tencent_captcha: '腾讯云验证码',
+}
+function pickCaptchaProvider(p: string) {
+  captchaForm.provider = p
+  captchaForm.values = {}
+}
+async function loadCaptchaProviders() {
+  try {
+    const d = dataOf<any>(await api.get('/admin/captcha-providers'))
+    captchaProviders.value = d.providers || []
+    captchaAvailable.value = d.available || []
+  } catch { /* ignore */ }
+}
+async function saveCaptchaProvider() {
+  if (!captchaForm.name.trim()) { message.warning('请填写通道名称'); return }
+  const config: Record<string, string> = {}
+  const secret: Record<string, string> = {}
+  for (const spec of captchaFieldSpecs()) {
+    const v = (captchaForm.values[spec.key] || '').trim()
+    if (!v) continue
+    if (spec.secret) secret[spec.key] = v
+    else config[spec.key] = v
+  }
+  captchaSaving.value = true
+  try {
+    await api.post('/admin/captcha-providers', { name: captchaForm.name.trim(), provider: captchaForm.provider, config, secret, is_default: captchaProviders.value.length === 0 })
+    message.success('人机验证通道已保存')
+    captchaForm.name = ''
+    captchaForm.values = {}
+    await loadCaptchaProviders()
+  } catch (e: any) { message.error(e?.response?.data?.error?.message || '保存失败') }
+  finally { captchaSaving.value = false }
+}
+async function setDefaultCaptcha(id: string) {
+  try { await api.post(`/admin/captcha-providers/${id}/default`); await loadCaptchaProviders() } catch (e: any) { message.error(e?.response?.data?.error?.message || '设置失败') }
+}
+async function deleteCaptcha(id: string) {
+  try { await api.delete(`/admin/captcha-providers/${id}`); await loadCaptchaProviders() } catch (e: any) { message.error(e?.response?.data?.error?.message || '删除失败') }
+}
 // ---- 第三方登录（对应魔方 public/plugins/oauth/）----
 const OAUTH_FIELD_SPECS: Record<string, FieldSpec[]> = {
   github: [
@@ -401,7 +460,7 @@ async function load() {
   try {
     templates.value = dataOf<any[]>(await api.get('/admin/mail-templates'))
   } catch { templates.value = [] }
-  await Promise.all([loadSmsProviders(), loadMailProviders(), loadOauthProviders(), loadCertProviders()])
+  await Promise.all([loadSmsProviders(), loadMailProviders(), loadOauthProviders(), loadCertProviders(), loadCaptchaProviders()])
 }
 
 async function save() {
@@ -624,7 +683,40 @@ onMounted(load)
       </div>
     </section>
 
-    <section class="panel">
+        <section class="panel">
+      <div class="panel-title-row"><div><h2>人机验证</h2><span>注册/登录/找回密码按通道校验；未配置通道时回退内置图形验证码（需 Redis）</span></div></div>
+      <div class="admin-two-col">
+        <div class="stack">
+          <div class="form-grid">
+            <label><span>通道名称</span><NInput v-model:value="captchaForm.name" placeholder="例如：主用-腾讯云" /></label>
+            <label><span>通道类型</span>
+              <select class="native-select" :value="captchaForm.provider" @change="pickCaptchaProvider(($event.target as HTMLSelectElement).value)">
+                <option v-for="p in captchaAvailable" :key="p" :value="p">{{ captchaChannelLabels[p] || p }}（{{ p }}）</option>
+              </select>
+            </label>
+          </div>
+          <div class="form-grid">
+            <label v-for="spec in captchaFieldSpecs()" :key="spec.key">
+              <span>{{ spec.label }}<template v-if="spec.secret">（凭据）</template></span>
+              <NInput v-if="spec.secret" v-model:value="captchaForm.values[spec.key]" type="password" show-password-on="click" />
+              <NInput v-else v-model:value="captchaForm.values[spec.key]" />
+            </label>
+          </div>
+          <NButton type="primary" :loading="captchaSaving" @click="saveCaptchaProvider">添加通道</NButton>
+          <div v-if="captchaProviders.length" class="stack">
+            <div v-for="p in captchaProviders" :key="p.id" class="advanced-row">
+              <div><b>{{ p.name }}</b><small>{{ captchaChannelLabels[p.provider] || p.provider }}<template v-if="p.is_default"> · 默认</template><template v-if="p.last_error"> · 最近错误：{{ p.last_error }}</template></small></div>
+              <div class="row" style="gap:8px">
+                <NButton v-if="!p.is_default" size="small" secondary @click="setDefaultCaptcha(p.id)">设为默认</NButton>
+                <NButton size="small" quaternary type="error" @click="deleteCaptcha(p.id)">删除</NButton>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+<section class="panel">
       <div class="panel-title-row"><div><h2>第三方登录</h2><span>启用后登录页出现对应按钮；回调地址为 {站点}/api/v1/auth/oauth/{通道}/callback</span></div></div>
       <div class="admin-two-col">
         <div class="stack">

@@ -40,7 +40,7 @@
 - CSS 变量主题系统，附 default / dark 两套主题
 - Docker Compose、Nginx、API/Worker/Scheduler 分离，Scheduler 会补偿重新投递 pending 服务并自动关闭超时未支付订单
 - API 请求日志（`api_logs`，路线图 §5.6 审计三表补全）：中间件异步记录方法/路径/状态码/耗时/错误码，后台可按方法、路径、状态过滤
-- 图形验证码（§9 必须项）：注册、登录、发送邮箱验证码、找回密码全部强制校验，纯标准库 SVG 数学验证码 + Redis 存储，配置 Redis 即自动启用
+- 图形验证码与人机验证通道（§9 必须项）：注册、登录、发送邮箱验证码、找回密码全部强制校验；内置纯标准库 SVG 数学验证码 + Redis 存储（未配置通道时回退使用）；还支持可插拔第三方通道（谷歌 reCAPTCHA / 腾讯云验证码），后台可增删通道、凭据加密入库
 - 会话/设备管理（§8）：用户可查看全部活跃登录会话（IP/User-Agent/最近活跃）、单独下线某台设备、一键下线其他设备
 - TOTP 两步验证（§9 可选 2FA）：纯标准库 RFC 6238 实现（通过 RFC 测试向量），密钥 AES-256-GCM 加密存储，登录强制校验验证码，找回密码同时重置 2FA 防锁死
 - 异常 IP 检测（§9）：账户从历史未用过的 IP 成功登录时写入安全事件
@@ -81,6 +81,8 @@
 - **多币种独立定价**：同一商品在每个币种上可以有自己的价格（**不用汇率折算**），下单按 `(商品, 周期, 币种)` 精确取价；钱包按币种隔离，人民币钱包付不了美元订单。指定了商品没有价格的币种会明确报错，而不是悄悄回退用错价格
 - **短信通道与验证码**：可插拔的短信通道抽象（已实现阿里云 / 腾讯云（TC3 签名手写）/ 赛邮 / 华为云（WSSE 口径与魔方插件逐字节一致）/ 短信宝 / 第二办公室 / 布丁云 v10 / 通用短信宝式 / 通用 HTTP 模板通道，关键签名均有独立向量测试）；验证码与邮箱验证码同构（哈希存储、限频、错 5 次锁定、10 分钟过期），另外按手机号做 1 分钟/1 小时/1 天三级风控并落发送流水，防止平台被当成短信轰炸跳板
 - **邮件通道**：对应魔方 `public/plugins/mail/`，从「只能配 SMTP」扩展为可插拔通道（阿里云邮件推送（RPC 签名与短信同源）/ 赛邮邮件 / 宝塔邮局 / 通用 HTTP 模板），凭据加密入库、后台可增删/设默认/发测试邮件；**通道优先，未配置通道时回退内置 SMTP**，老部署升级后行为不变
+- **人机验证通道**：对应魔方 `public/plugins/captcha/`，在内置图形验证码之上扩展可插拔第三方通道（谷歌 reCAPTCHA / 腾讯云验证码）：后端只校验浏览器拿到的票据（谷歌走独立校验接口，腾讯云走 TC3-HMAC-SHA256 签名，`internal/tc3` 与短信共用同一套签名实现），前端按 `/auth/captcha` 返回的通道类型渲染组件；通道不可用或未配置时原样回退内置图形验证码
+
 - **接口分组与容量分配**：商品可绑定接口分组，开通时按 `least_loaded` / `fill_first` / `round_robin` 策略挑一个还有容量的接口；容量按「还活着的服务」计算，分组满了会明确失败并提示扩容，而不是硬塞到已满的接口上
 - **PayPal**：Orders v2 下单，access token 缓存（3 笔订单只取 1 次），回调验签走官方 `verify-webhook-signature` 接口；金额用字符串解析避免浮点误差
 - **USDT（Epusdt）**：签名算法与官方文档例子**逐字节一致**（测试直接复算文档给出的签名），回调验签 + 法币金额换算
@@ -152,6 +154,7 @@ docker compose exec -T postgres sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_D
 docker compose exec -T postgres sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < migrations/022_custom_providers.sql
 docker compose exec -T postgres sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < migrations/023_mail_providers.sql
 docker compose exec -T postgres sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < migrations/024_oauth_suite_tickets.sql
+docker compose exec -T postgres sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < migrations/025_captcha_providers.sql
 ```
 
 如果你的 shell 没有导出这两个变量，可直接用 `.env` 里的实际用户名和数据库名替换。全新数据库会按 `001 -> 013` 自动执行。

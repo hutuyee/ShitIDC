@@ -17,7 +17,6 @@ package sms
 import (
 	"bytes"
 	"context"
-	"crypto/hmac"
 	crand "crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -27,6 +26,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/hutuyee/ShitIDC/internal/tc3"
 )
 
 // Qcloudsms 实现腾讯云短信通道。
@@ -136,38 +137,15 @@ func (q *Qcloudsms) Send(ctx context.Context, cfg Config, secret Secret, msg Mes
 }
 
 // tc3Signature 计算 API 3.0 的 Authorization 头。
-// Host 固定为 sms.tencentcloudapi.com（endpoint 覆盖只用于测试，签名不变）。
+// Host 固定为 sms.tencentcloudapi.com（endpoint 覆盖只用于测试，签名不变）；
+// 签名实现与验证码通道共用 internal/tc3。
 func tc3Signature(secretID, secretKey, date string, timestamp int64, payload string) string {
-	const host = "sms.tencentcloudapi.com"
-	canonicalRequest := "POST\n/\n\n" +
-		"content-type:application/json; charset=utf-8\n" +
-		"host:" + host + "\n" +
-		"\n" +
-		"content-type;host\n" +
-		sha256Hex(payload)
-	stringToSign := "TC3-HMAC-SHA256\n" +
-		fmt.Sprintf("%d", timestamp) + "\n" +
-		date + "/sms/tc3_request\n" +
-		sha256Hex(canonicalRequest)
-
-	kDate := hmacSHA256([]byte("TC3"+secretKey), date)
-	kService := hmacSHA256(kDate, "sms")
-	kSigning := hmacSHA256(kService, "tc3_request")
-	return "TC3-HMAC-SHA256" +
-		" Credential=" + secretID + "/" + date + "/sms/tc3_request" +
-		", SignedHeaders=content-type;host" +
-		", Signature=" + hex.EncodeToString(hmacSHA256(kSigning, stringToSign))
+	return tc3.Authorization(secretID, secretKey, "sms", "sms.tencentcloudapi.com", date, timestamp, payload)
 }
 
 func sha256Hex(s string) string {
 	sum := sha256.Sum256([]byte(s))
 	return hex.EncodeToString(sum[:])
-}
-
-func hmacSHA256(key []byte, s string) []byte {
-	mac := hmac.New(sha256.New, key)
-	mac.Write([]byte(s))
-	return mac.Sum(nil)
 }
 
 func randomHex16() string {

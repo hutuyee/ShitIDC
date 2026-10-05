@@ -308,6 +308,12 @@ func (a *App) registerAdminRoutes(g *gin.RouterGroup) {
 	g.POST("/mail-providers/:id/default", a.require("settings.manage"), a.csrf(), a.adminSetDefaultMailProvider)
 	g.POST("/mail-providers/:id/test", a.require("settings.manage"), a.csrf(), a.adminTestMailProvider)
 	g.DELETE("/mail-providers/:id", a.require("settings.manage"), a.csrf(), a.adminDeleteMailProvider)
+
+	// 人机验证通道：内置图形验证码之外的可插拔通道
+	g.GET("/captcha-providers", a.require("settings.manage"), a.adminListCaptchaProviders)
+	g.POST("/captcha-providers", a.require("settings.manage"), a.csrf(), a.adminCreateCaptchaProvider)
+	g.POST("/captcha-providers/:id/default", a.require("settings.manage"), a.csrf(), a.adminSetDefaultCaptchaProvider)
+	g.DELETE("/captcha-providers/:id", a.require("settings.manage"), a.csrf(), a.adminDeleteCaptchaProvider)
 	// 第三方登录通道
 	g.GET("/oauth-providers", a.require("settings.manage"), a.adminListOAuthProviders)
 	g.POST("/oauth-providers", a.require("settings.manage"), a.csrf(), a.adminSaveOAuthProvider)
@@ -585,24 +591,26 @@ func (a *App) authConfig(c *gin.Context) {
 	httpx.OK(c, 200, map[string]bool{
 		"email_verify_required": mailSettings.VerifyRequired && mailEnabled,
 		"smtp_enabled":          mailEnabled,
-		"captcha_enabled":       a.captchaEnabled(),
+		"captcha_enabled":       a.captchaEnabled(c),
 	})
 }
 
 func (a *App) register(c *gin.Context) {
 	var in struct {
-		Email        string `json:"email"`
-		Password     string `json:"password"`
-		Code         string `json:"code"`
-		ReferralCode string `json:"referral_code"`
-		CaptchaID    string `json:"captcha_id"`
-		CaptchaAns   string `json:"captcha_answer"`
+		Email          string `json:"email"`
+		Password       string `json:"password"`
+		Code           string `json:"code"`
+		ReferralCode   string `json:"referral_code"`
+		CaptchaID      string `json:"captcha_id"`
+		CaptchaAns     string `json:"captcha_answer"`
+		CaptchaToken   string `json:"captcha_token"`
+		CaptchaRandstr string `json:"captcha_randstr"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
 		httpx.Fail(c, 400, "INVALID_REQUEST", "请求格式错误")
 		return
 	}
-	if !a.verifyCaptcha(c, in.CaptchaID, in.CaptchaAns) {
+	if !a.verifyCaptcha(c, in.CaptchaID, in.CaptchaAns, in.CaptchaToken, in.CaptchaRandstr) {
 		return
 	}
 	in.Email = strings.TrimSpace(strings.ToLower(in.Email))
@@ -669,15 +677,17 @@ func (a *App) register(c *gin.Context) {
 
 func (a *App) sendEmailCode(c *gin.Context) {
 	var in struct {
-		Email      string `json:"email"`
-		CaptchaID  string `json:"captcha_id"`
-		CaptchaAns string `json:"captcha_answer"`
+		Email          string `json:"email"`
+		CaptchaID      string `json:"captcha_id"`
+		CaptchaAns     string `json:"captcha_answer"`
+		CaptchaToken   string `json:"captcha_token"`
+		CaptchaRandstr string `json:"captcha_randstr"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
 		httpx.Fail(c, 400, "INVALID_REQUEST", "请求格式错误")
 		return
 	}
-	if !a.verifyCaptcha(c, in.CaptchaID, in.CaptchaAns) {
+	if !a.verifyCaptcha(c, in.CaptchaID, in.CaptchaAns, in.CaptchaToken, in.CaptchaRandstr) {
 		return
 	}
 	in.Email = strings.TrimSpace(strings.ToLower(in.Email))
@@ -793,17 +803,19 @@ func (a *App) version(c *gin.Context) {
 
 func (a *App) login(c *gin.Context) {
 	var in struct {
-		Email      string `json:"email"`
-		Password   string `json:"password"`
-		TotpCode   string `json:"totp_code"`
-		CaptchaID  string `json:"captcha_id"`
-		CaptchaAns string `json:"captcha_answer"`
+		Email          string `json:"email"`
+		Password       string `json:"password"`
+		TotpCode       string `json:"totp_code"`
+		CaptchaID      string `json:"captcha_id"`
+		CaptchaAns     string `json:"captcha_answer"`
+		CaptchaToken   string `json:"captcha_token"`
+		CaptchaRandstr string `json:"captcha_randstr"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
 		httpx.Fail(c, 400, "INVALID_REQUEST", "请求格式错误")
 		return
 	}
-	if !a.verifyCaptcha(c, in.CaptchaID, in.CaptchaAns) {
+	if !a.verifyCaptcha(c, in.CaptchaID, in.CaptchaAns, in.CaptchaToken, in.CaptchaRandstr) {
 		return
 	}
 	email := strings.TrimSpace(strings.ToLower(in.Email))

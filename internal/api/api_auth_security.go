@@ -59,15 +59,17 @@ func (a *App) changePassword(c *gin.Context) {
 // endpoint cannot be used to enumerate registered addresses.
 func (a *App) requestPasswordReset(c *gin.Context) {
 	var in struct {
-		Email      string `json:"email"`
-		CaptchaID  string `json:"captcha_id"`
-		CaptchaAns string `json:"captcha_answer"`
+		Email          string `json:"email"`
+		CaptchaID      string `json:"captcha_id"`
+		CaptchaAns     string `json:"captcha_answer"`
+		CaptchaToken   string `json:"captcha_token"`
+		CaptchaRandstr string `json:"captcha_randstr"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
 		httpx.Fail(c, 400, "INVALID_REQUEST", "请求格式错误")
 		return
 	}
-	if !a.verifyCaptcha(c, in.CaptchaID, in.CaptchaAns) {
+	if !a.verifyCaptcha(c, in.CaptchaID, in.CaptchaAns, in.CaptchaToken, in.CaptchaRandstr) {
 		return
 	}
 	email := strings.TrimSpace(strings.ToLower(in.Email))

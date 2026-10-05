@@ -101,51 +101,6 @@ func (a *App) adminListAPILogs(c *gin.Context) {
 	httpx.OK(c, 200, v)
 }
 
-// ---- captcha (§9 验证码) ----
-
-const captchaTTL = 5 * time.Minute
-
-// captchaEnabled reports whether challenges are enforced (needs Redis; the
-// answer hash must survive process restarts and multi-node routing).
-func (a *App) captchaEnabled() bool { return a.Redis != nil }
-
-func (a *App) issueCaptcha(c *gin.Context) {
-	captcha, err := security.NewCaptcha()
-	if err != nil {
-		httpx.Fail(c, 500, "INTERNAL_ERROR", "生成验证码失败")
-		return
-	}
-	if err := a.Redis.Set(c, "captcha:"+captcha.ID, security.SHA256Hex(strings.TrimSpace(strconv.Itoa(captcha.Answer))), captchaTTL).Err(); err != nil {
-		httpx.Fail(c, 500, "INTERNAL_ERROR", "保存验证码失败")
-		return
-	}
-	httpx.OK(c, 200, map[string]string{"id": captcha.ID, "svg": captcha.SVG})
-}
-
-// verifyCaptcha consumes the challenge for these request fields; a failed
-// check has already written the response.
-func (a *App) verifyCaptcha(c *gin.Context, id, answer string) bool {
-	if !a.captchaEnabled() {
-		return true
-	}
-	if strings.TrimSpace(id) == "" || strings.TrimSpace(answer) == "" {
-		httpx.Fail(c, 400, "CAPTCHA_REQUIRED", "请输入图形验证码")
-		return false
-	}
-	key := "captcha:" + id
-	stored, err := a.Redis.Get(c, key).Result()
-	if err != nil {
-		httpx.Fail(c, 400, "CAPTCHA_EXPIRED", "验证码已过期，请刷新后重试")
-		return false
-	}
-	_ = a.Redis.Del(c, key).Err()
-	if stored != security.SHA256Hex(strings.TrimSpace(answer)) {
-		httpx.Fail(c, 400, "CAPTCHA_INVALID", "图形验证码错误")
-		return false
-	}
-	return true
-}
-
 // ---- sessions / device management (§8) ----
 
 func (a *App) listSessions(c *gin.Context) {

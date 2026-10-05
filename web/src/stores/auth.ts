@@ -8,6 +8,8 @@ export type User = { uid: number; id: string; email: string; status: string; ema
 export type LoginExtra = {
   captcha_id?: string
   captcha_answer?: string
+  captcha_token?: string
+  captcha_randstr?: string
   totp_code?: string
 }
 export const useAuthStore = defineStore('auth', {
@@ -17,7 +19,7 @@ export const useAuthStore = defineStore('auth', {
       const r = await api.post('/auth/login', { email, password, ...extra })
       const d = dataOf<{user: User; csrf_token: string}>(r); this.user = d.user; setCSRF(d.csrf_token); await this.me()
     },
-    async register(email: string, password: string, code = '', extra: { captcha_id?: string; captcha_answer?: string; referral_code?: string } = {}) {
+    async register(email: string, password: string, code = '', extra: { captcha_id?: string; captcha_answer?: string; captcha_token?: string; captcha_randstr?: string; referral_code?: string } = {}) {
       await api.post('/auth/register', { email, password, code, ...extra }); await this.login(email, password)
     },
     async me() {

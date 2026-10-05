@@ -23,9 +23,9 @@ const tab = ref('login')
 const totpNeeded = ref(false)
 const totpCode = ref('')
 // captcha per tab: each challenge is single-use, so every form keeps its own.
-const loginCaptcha = ref({ id: '', answer: '' })
-const regCaptcha = ref({ id: '', answer: '' })
-const resetCaptcha = ref({ id: '', answer: '' })
+const loginCaptcha = ref({ id: '', answer: '', token: '', randstr: '' })
+const regCaptcha = ref({ id: '', answer: '', token: '', randstr: '' })
+const resetCaptcha = ref({ id: '', answer: '', token: '', randstr: '' })
 const loginCaptchaRef = ref<InstanceType<typeof CaptchaInput> | null>(null)
 const regCaptchaRef = ref<InstanceType<typeof CaptchaInput> | null>(null)
 const resetCaptchaRef = ref<InstanceType<typeof CaptchaInput> | null>(null)
@@ -69,6 +69,8 @@ async function sendCode() {
       email: email.value.trim().toLowerCase(),
       captcha_id: regCaptcha.value.id,
       captcha_answer: regCaptcha.value.answer,
+      captcha_token: regCaptcha.value.token,
+      captcha_randstr: regCaptcha.value.randstr,
     })
     message.success('验证码已发送，请查收邮箱（10 分钟内有效）')
     countdown.value = 60
@@ -87,7 +89,7 @@ async function sendCode() {
 async function submit(register = false) {
   loading.value = true
   try {
-    if (register) await auth.register(email.value, password.value, code.value.trim(), { captcha_id: regCaptcha.value.id, captcha_answer: regCaptcha.value.answer, referral_code: referralCode.value.trim() || undefined })
+    if (register) await auth.register(email.value, password.value, code.value.trim(), { captcha_id: regCaptcha.value.id, captcha_answer: regCaptcha.value.answer, captcha_token: regCaptcha.value.token, captcha_randstr: regCaptcha.value.randstr, referral_code: referralCode.value.trim() || undefined })
     else await auth.login(email.value, password.value, loginExtra())
     router.push('/')
   } catch (e: any) {
@@ -105,13 +107,15 @@ async function submit(register = false) {
     }
   } finally {
     loginCaptcha.value.answer = ''
+    loginCaptcha.value.token = ''
     regCaptcha.value.answer = ''
+    regCaptcha.value.token = ''
     loading.value = false
   }
 }
 
 function loginExtra(): LoginExtra {
-  const extra: LoginExtra = { captcha_id: loginCaptcha.value.id, captcha_answer: loginCaptcha.value.answer }
+  const extra: LoginExtra = { captcha_id: loginCaptcha.value.id, captcha_answer: loginCaptcha.value.answer, captcha_token: loginCaptcha.value.token, captcha_randstr: loginCaptcha.value.randstr }
   if (totpNeeded.value) extra.totp_code = totpCode.value.trim()
   return extra
 }
@@ -143,6 +147,8 @@ async function sendResetCode() {
       email: email.value.trim().toLowerCase(),
       captcha_id: resetCaptcha.value.id,
       captcha_answer: resetCaptcha.value.answer,
+      captcha_token: resetCaptcha.value.token,
+      captcha_randstr: resetCaptcha.value.randstr,
     })
     message.success('如果该邮箱已注册，重置验证码已发出（10 分钟内有效）')
     resetCountdown.value = 60
@@ -187,7 +193,7 @@ async function submitReset() {
             <NFormItem label="邮箱"><NInput v-model:value="email" /></NFormItem>
             <NFormItem label="密码"><NInput v-model:value="password" type="password" show-password-on="click" /></NFormItem>
             <NFormItem v-if="captchaEnabled" label="验证码">
-              <CaptchaInput ref="loginCaptchaRef" v-model:id="loginCaptcha.id" v-model:answer="loginCaptcha.answer" />
+              <CaptchaInput ref="loginCaptchaRef" v-model:id="loginCaptcha.id" v-model:answer="loginCaptcha.answer" v-model:token="loginCaptcha.token" v-model:randstr="loginCaptcha.randstr" />
             </NFormItem>
             <NFormItem v-if="totpNeeded" label="两步验证码">
               <NInput v-model:value="totpCode" placeholder="认证器 6 位数字" maxlength="6" />
@@ -199,7 +205,7 @@ async function submitReset() {
           <NForm>
             <NFormItem label="邮箱"><NInput v-model:value="email" /></NFormItem>
             <NFormItem v-if="captchaEnabled" label="验证码">
-              <CaptchaInput ref="regCaptchaRef" v-model:id="regCaptcha.id" v-model:answer="regCaptcha.answer" />
+              <CaptchaInput ref="regCaptchaRef" v-model:id="regCaptcha.id" v-model:answer="regCaptcha.answer" v-model:token="regCaptcha.token" v-model:randstr="regCaptcha.randstr" />
             </NFormItem>
             <NFormItem v-if="smtpEnabled" :label="verifyRequired ? '邮箱验证码' : '邮箱验证码（可选）'">
               <div class="code-row">
@@ -228,7 +234,7 @@ async function submitReset() {
           <NForm>
             <NFormItem label="邮箱"><NInput v-model:value="email" /></NFormItem>
             <NFormItem v-if="captchaEnabled" label="验证码">
-              <CaptchaInput ref="resetCaptchaRef" v-model:id="resetCaptcha.id" v-model:answer="resetCaptcha.answer" />
+              <CaptchaInput ref="resetCaptchaRef" v-model:id="resetCaptcha.id" v-model:answer="resetCaptcha.answer" v-model:token="resetCaptcha.token" v-model:randstr="resetCaptcha.randstr" />
             </NFormItem>
             <NFormItem label="重置验证码">
               <div class="code-row">
