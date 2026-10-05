@@ -933,3 +933,25 @@ CBAP 包 `template/` 下是上游的 **PHP 前台皮肤**，不是可移植的�
 导入侧说明：`template/` 与 `internal/zjmfimport`（魔方 server 模块导入器）无交集，导入流程不受影响。
 
 验证：两笔提交的静态检查均通过（`gofmt` / `go build ./...` / `go vet` / `vue-tsc --noEmit`）。
+
+### 10.14 oss 插件（TencentcloudOss 对象存储）（本轮补齐）
+
+CBAP 包 `oss/TencentcloudOss.zip` 是明文插件（module=oss，主类 `TencentcloudOss`），对接腾讯云 COS；魔方主程序加密，只有插件侧契约可读。本轮新增原生通道 `internal/oss`（通道注册表 + `oss_providers` 表 + 后台面板），并把工单附件接上：配置通道后上传转存对象存储、下载 302 到 3 分钟签名地址；未配置时保持本机存储，默认行为不变。
+
+| 维度 | 参考实现 | ShitIDC 落地 |
+|---|---|---|
+| 配置 | `module_name` / `secret_id` / `secert_key`（原版拼写）/ `bucket` / `region` | 通道名 + bucket/region（公开）+ secret_id/secret_key（加密凭据；按正确拼写存储） |
+| 探活 Link | 官方 SDK `HeadBucket` | `TestLink`：HEAD 桶地址，复用同一套签名器 |
+| 上传 Upload | `putObject`：图片 / PDF 用 `public-read`，其余 `private`；Key=file_path+file_name 去掉 WEB_ROOT | `Upload`：同口径 ACL 规则；工单附件 Key=`uploads/tickets/{工单ID}/{uuid}{ext}`，转存成功后删除本机文件 |
+| 列表 Data | `listObjects` | 未落地（站内无列举入口；对象存在性用 `Exists`=HEAD 对象） |
+| 下载 Download | `getObjectUrl` 签名地址，有效期 +3 分钟 | `SignedURL`：COS v5 签名，默认 3 分钟；工单附件下载 302 跳转 |
+| 签名 | SDK 内部 COS v5 | 标准库实现 v5（KeyTime / SignKey / HttpString / StringToSign / Signature），路径参数按 COS 规则编码（空格 %20、保留 /） |
+
+有意差异 / 未落地：
+
+- 不引入官方 SDK（仓库惯例：第三方对接标准库实现）；
+- 不做 `listObjects` 全量列举；探活用 HEAD 桶、下载只按需 HEAD 对象（O(1)，大桶友好）；
+- 参考实现拼写 `secert_key` 属笔误，落地用 `secret_key`（新表新数据，不影响存量）；
+- 下载 302 后由 COS 直接响应对象，无法再强制 attachment 响应头；上传类型白名单本就不含 HTML / SVG，风险面不变。
+
+验证：`gofmt` / `go build ./...` / `go vet` / `vue-tsc --noEmit`。
