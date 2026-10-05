@@ -111,6 +111,7 @@ function toggleTheme() {
             <router-link v-if="auth.permissions['promotion.manage']" :to="ADMIN_PATH + '/promotions'">活动促销</router-link>
             <router-link v-if="auth.permissions['cycle_order.manage']" :to="ADMIN_PATH + '/cycle-orders'">周期人工订单</router-link>
             <router-link v-if="auth.permissions['invoice.manage']" :to="ADMIN_PATH + '/invoices'">发票管理</router-link>
+            <router-link v-if="auth.permissions['email_notice.manage']" :to="ADMIN_PATH + '/email-notice'">邮件通知</router-link>
             <router-link v-if="auth.permissions['product.write']" :to="ADMIN_PATH + '/cashbacks'">商品返现</router-link>
             <router-link v-if="auth.permissions['finance.report']" :to="ADMIN_PATH + '/order-costs'">成本支出</router-link>
             <router-link v-if="auth.permissions['agent.manage']" :to="ADMIN_PATH + '/agents'">代理分组</router-link>
