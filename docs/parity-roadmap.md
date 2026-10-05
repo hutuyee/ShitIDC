@@ -818,3 +818,16 @@ CBAP 包 gateway 目录的明文插件此前大多已对齐，本轮清掉最后
 
 迁移：027（expired_ip_logs）/ 028（export_configs，含两条预置列表）。
 
+
+### 10.9 线下支付渠道（user_custom 插件对齐）
+
+参考插件 gateways/user_custom 是「人工收款」模型：`UserCustomHandle` 从渠道配置读出收款说明（HTML），下单接口返回 `type=html`，主题端 `$('#pay-type .add-html').html(addHtml)` 原样注入展示；插件没有异步回调，是否到账完全靠人工判断。ShitIDC 按同一模型落地为 manual 渠道：
+
+| 环节 | 魔方 user_custom | ShitIDC manual |
+|---|---|---|
+| 渠道配置 | seller_id 字段存收款说明 HTML | 后台「支付渠道」新增 manual 渠道：config.message 存收款说明（支持 HTML），pay_types 固定为 ["manual"]，无需填写商户密钥 |
+| 下单 | 返回 type=html / addHtml，前端原样注入 | /orders/:id/pay/online 返回 {html, out_trade_no, need_confirm:true}，订单页弹窗展示收款说明与订单号；返回前确保存在 method=manual 的待支付登记单（复用或补建） |
+| 收款确认 | 无回调，人工在后台标记 / 开通 | 管理端 POST /admin/orders/:id/confirm-payment（wallet.adjust + CSRF）：校验金额后走 CompleteOnlinePayment，成功后复用在线支付的同一后处理（审计 / 推广佣金 / 开通入队 / OrderPaid / InvoicePaid / WalletRecharged） |
+| 钱包充值 | 插件未特别限制 | 明确不支持：手动建单与 PrepareRecharge 都拒绝线下支付，避免「转账后余额无人确认到账」 |
+
+无新增迁移（复用 payment_providers 的 config JSON 字段）。前端：订单页「选择支付方式」按渠道切换文案与弹窗，钱包充值选项过滤 manual，后台可配置收款说明并在订单中心「确认收款」。
