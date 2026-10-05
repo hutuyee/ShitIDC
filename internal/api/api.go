@@ -190,6 +190,12 @@ func NewRouter(a *App) *gin.Engine {
 			authed.GET("/services/:id/upgrade-plans", a.require("service.read"), a.listUpgradePlans)
 			authed.POST("/services/:id/upgrade/quote", a.require("service.read"), a.csrf(), a.quoteUpgrade)
 			authed.POST("/services/:id/upgrade", a.require("service.read"), a.csrf(), a.requestUpgrade)
+			// 流量包（对齐魔方 FlowPacket 插件）：为名下关联产品购买，余额支付
+			authed.GET("/flow-packets", a.require("service.read"), a.listMyFlowPackets)
+			authed.GET("/flow-packets/orders", a.require("service.read"), a.listMyFlowPacketOrders)
+			authed.POST("/flow-packets/:id/purchase", a.require("service.read"), a.csrf(), a.purchaseFlowPacket)
+			authed.POST("/flow-packets/orders/:id/pay", a.require("service.read"), a.csrf(), a.payFlowPacketOrder)
+			authed.POST("/flow-packets/orders/:id/cancel", a.require("service.read"), a.csrf(), a.cancelFlowPacketOrder)
 			authed.GET("/tickets", a.require("ticket.read"), a.listTickets)
 			authed.POST("/tickets", a.require("ticket.write"), a.csrf(), a.createTicket)
 			authed.GET("/tickets/:id", a.require("ticket.read"), a.ticketDetail)
@@ -554,6 +560,14 @@ func (a *App) registerAdminRoutes(g *gin.RouterGroup) {
 	g.POST("/services/:id/retry", a.require("service.manage"), a.csrf(), a.adminRetryService)
 	g.GET("/service-transfers", a.require("service.manage"), a.adminListServiceTransfers)
 	g.POST("/service-transfers", a.require("service.manage"), a.csrf(), a.adminTransferService)
+	// 流量包（对齐魔方 FlowPacket 插件）
+	g.GET("/flow-packets", a.require("flow_packet.manage"), a.adminListFlowPackets)
+	g.POST("/flow-packets", a.require("flow_packet.manage"), a.csrf(), a.adminCreateFlowPacket)
+	g.PUT("/flow-packets/:id", a.require("flow_packet.manage"), a.csrf(), a.adminUpdateFlowPacket)
+	g.PUT("/flow-packets/:id/status", a.require("flow_packet.manage"), a.csrf(), a.adminSetFlowPacketStatus)
+	g.DELETE("/flow-packets/:id", a.require("flow_packet.manage"), a.csrf(), a.adminDeleteFlowPacket)
+	g.GET("/flow-packet-orders", a.require("flow_packet.manage"), a.adminListFlowPacketOrders)
+	g.DELETE("/flow-packet-orders/:id", a.require("flow_packet.manage"), a.csrf(), a.adminDeleteFlowPacketOrder)
 }
 
 func requestID() gin.HandlerFunc {
