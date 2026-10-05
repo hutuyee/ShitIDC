@@ -75,8 +75,7 @@ func (a *App) requestPasswordReset(c *gin.Context) {
 		httpx.Fail(c, 400, "INVALID_EMAIL", "邮箱格式错误")
 		return
 	}
-	settings, err := a.Store.GetMailSettings(c)
-	if err != nil || settings.SMTPHost == "" || settings.SMTPFrom == "" || settings.SMTPPort <= 0 {
+	if !a.mailConfigured(c) {
 		httpx.Fail(c, 503, "SMTP_NOT_CONFIGURED", "邮件服务未配置，请联系管理员")
 		return
 	}
@@ -106,12 +105,12 @@ func (a *App) requestPasswordReset(c *gin.Context) {
 			return
 		}
 	} else {
-		opts, oerr := a.mailOptions(c)
-		if oerr != nil {
-			httpx.Fail(c, 503, "SMTP_NOT_CONFIGURED", oerr.Error())
+		sender, _, serr := a.resolveMailSender(c)
+		if serr != nil {
+			httpx.Fail(c, 503, "SMTP_NOT_CONFIGURED", serr.Error())
 			return
 		}
-		if err := opts.Send(c, email, subject, body); err != nil {
+		if err := sender(c, email, subject, body); err != nil {
 			httpx.Fail(c, 502, "MAIL_SEND_FAILED", "重置邮件发送失败: "+err.Error())
 			return
 		}
