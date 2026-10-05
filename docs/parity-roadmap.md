@@ -532,3 +532,49 @@ order_items.config_cents/setup_cents/config_selections/custom_fields
 
 `NewRouter` 会**再归一化一次**后台路径——`Config` 未必经 `Load()` 构造（测试、内嵌调用），
 空值会让后台路由挂到根路径并与用户路由直接冲突。
+
+---
+
+## 7. 插件市场与魔方插件导入（本轮补齐）
+
+对应魔方财务的「应用商店」+「把插件丢进目录就能用」的扩展生态。
+
+### 7.1 插件市场
+
+市场 = 一个可自托管的 JSON 索引（`docs/marketplace.md`）+ 安装包，支持三类包：
+`extension`（WASM 扩展）、`theme`（主题）、`zjmf-plugin`（魔方 server 插件）。
+安装扩展/主题完全复用既有上传校验链（manifest / WASM 魔数 / Zip Slip / 权限白名单），
+市场只是多回答"包从哪来"；下载走 SSRF 防护并支持 sha256 校验。
+
+管理接口：`GET /admin/marketplace`（索引 + 本机安装状态标注）、
+`POST /admin/marketplace/install`、`GET|PUT /admin/marketplace/settings`。
+
+### 7.2 魔方 server 插件导入（转换器 + 声明式上游运行时）
+
+魔方插件是 PHP，不能运行；但经典 server 模块高度公式化。方案是**静态转换**：
+
+```
+魔方插件 zip ──internal/zjmfimport（解析 PHP）──▶ ProviderSpec JSON
+            ──internal/provider/custom（执行规格）──▶ custom 供应商
+```
+
+- 转换器识别三种已知签名（bthosts/nokvm/wlkanglepro 形态，wlkanglepro 的
+  `s=md5(a+token+r)` 约定已对源码核实）、业务码判据、全部生命周期动作路径、
+  `_ConfigOptions` 两种 options 写法、`$params → {{模板}}` 请求体映射；
+- 识别不了的不编造：动作留空 + warnings 明示，导入后在「查看规格」里编辑 JSON 补齐；
+- PVE ticket 类无法静态转换的模块明确拒绝并指向内置 proxmox 供应商；
+- 运行时按规格发请求：签名逐字节对齐（有测试钉死）、成功判据数字宽容比较、
+  失败文案透出、开通号按 `instance_id_path` 提取、缺失动作诚实报错。
+
+配套改动：
+
+- `Renew(ctx, RenewRequest{InstanceID, ExpiresAt})`：续费把新到期时间传给上游
+  （对应魔方 `_Renew` 的 `nextduedate` 约定），全部内置 Provider 已适配；
+- worker 开通时携带**开通上下文**（订单配置项 / 自定义字段 / 邮箱，魔方
+  `$params['configoptions']` 的等价物），配置项按 `config_options.provider_key`
+  映射上游参数名（migrations/022），开关传 1/0、数量传数量、下拉传子项标签；
+- CLI `cmd/zjmfimport`：离线转换 zip/目录 → 规格 JSON；
+- 四个随魔方发布模块（bthosts/nokvm/wlkanglepro/proxmoxve）实测通过
+  （参考源码仅用于冒烟验证，不入仓库；单测用按契约文档撰写的原创夹具）。
+
+详见 `docs/zjmf-plugin-import.md`，含模板变量速查与诚实的限制清单。

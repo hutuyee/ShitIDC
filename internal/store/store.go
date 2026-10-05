@@ -1101,3 +1101,20 @@ func (s *Store) ImportProviderProduct(ctx context.Context, providerPublicID, ups
 	}
 	return p, nil
 }
+
+// UpdateProviderConfigOnly 只更新 providers.config（规格编辑用），
+// 不动名称/地址/密钥，也不重置连接状态。
+func (s *Store) UpdateProviderConfigOnly(ctx context.Context, publicID string, config map[string]any) error {
+	cfg, err := json.Marshal(config)
+	if err != nil {
+		return err
+	}
+	tag, err := s.DB.Exec(ctx, `UPDATE providers SET config=$2::jsonb,updated_at=now() WHERE public_id=$1`, publicID, string(cfg))
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}

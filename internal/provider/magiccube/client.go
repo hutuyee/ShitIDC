@@ -163,8 +163,8 @@ func (c *Client) Unsuspend(ctx context.Context, id string) error {
 func (c *Client) Terminate(ctx context.Context, id string) error {
 	return c.action(ctx, c.cfg.Paths.Terminate, id)
 }
-func (c *Client) Renew(ctx context.Context, id string) error {
-	return c.action(ctx, c.cfg.Paths.Renew, id)
+func (c *Client) Renew(ctx context.Context, req provider.RenewRequest) error {
+	return c.action(ctx, c.cfg.Paths.Renew, req.InstanceID)
 }
 
 func (c *Client) action(ctx context.Context, path, id string) error {

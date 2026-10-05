@@ -214,7 +214,7 @@ func (c *Client) Terminate(ctx context.Context, ref string) error {
 	return err
 }
 
-func (c *Client) Renew(context.Context, string) error { return nil }
+func (c *Client) Renew(context.Context, provider.RenewRequest) error { return nil }
 
 // ChangePackage calls Virtualizor's editvs to move an existing VPS to another
 // plan and/or override its resources. Virtualizor takes a plan id (plid) plus

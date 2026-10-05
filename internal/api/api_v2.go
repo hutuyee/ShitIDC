@@ -16,7 +16,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
-	"github.com/hutuyee/ShitIDC/internal/archutil"
 	"github.com/hutuyee/ShitIDC/internal/events"
 	"github.com/hutuyee/ShitIDC/internal/extension"
 	"github.com/hutuyee/ShitIDC/internal/httpx"
@@ -543,39 +542,9 @@ func (a *App) adminUploadExtension(c *gin.Context) {
 		return
 	}
 	defer f.Close()
-	files, err := archutil.SafeReadZip(f, 20<<20, 100)
+	v, err := a.installExtensionZip(c, f)
 	if err != nil {
 		httpx.Fail(c, 400, "PACKAGE_INVALID", err.Error())
-		return
-	}
-	manifestRaw, ok := files["extension.json"]
-	if !ok {
-		httpx.Fail(c, 400, "PACKAGE_INVALID", "扩展包缺少 extension.json")
-		return
-	}
-	manifest, err := extension.ParseManifest(manifestRaw)
-	if err != nil {
-		httpx.Fail(c, 400, "MANIFEST_INVALID", err.Error())
-		return
-	}
-	wasm, ok := files[manifest.Entry]
-	if !ok {
-		httpx.Fail(c, 400, "PACKAGE_INVALID", "扩展包缺少声明的 entry: "+manifest.Entry)
-		return
-	}
-	dir := filepath.Join(a.Cfg.Storage.Dir, "extensions", manifest.Name)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		httpx.Fail(c, 500, "INTERNAL_ERROR", "扩展目录创建失败")
-		return
-	}
-	if err := os.WriteFile(filepath.Join(dir, manifest.Entry), wasm, 0o644); err != nil {
-		httpx.Fail(c, 500, "INTERNAL_ERROR", "扩展保存失败")
-		return
-	}
-	_ = os.WriteFile(filepath.Join(dir, "extension.json"), manifestRaw, 0o644)
-	v, err := a.Store.UpsertExtension(c, manifest.Name, manifest.Version, manifest.Description, filepath.Join(dir, manifest.Entry), manifest.Permissions, false)
-	if err != nil {
-		httpx.Fail(c, 500, "EXTENSION_SAVE_FAILED", err.Error())
 		return
 	}
 	_ = a.Store.Audit(c, p.User.ID, "extension.upload", "extension", v.PublicID, c.GetString("request_id"), clientIP(c), c.Request.UserAgent(), nil, map[string]any{"name": v.Name, "version": v.Version, "permissions": v.Permissions})

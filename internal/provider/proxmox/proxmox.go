@@ -236,7 +236,7 @@ func (c *Client) Terminate(ctx context.Context, ref string) error {
 	return c.vmAction(ctx, ref, "destroy")
 }
 
-func (c *Client) Renew(context.Context, string) error { return nil }
+func (c *Client) Renew(context.Context, provider.RenewRequest) error { return nil }
 
 // ChangePackage resizes an existing guest (cores / memory) and applies the new
 // limits through the PVE config endpoint. Only the resources the caller sent

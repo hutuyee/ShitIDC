@@ -20,6 +20,7 @@ import (
 	"github.com/hutuyee/ShitIDC/internal/notify"
 	"github.com/hutuyee/ShitIDC/internal/provider"
 	"github.com/hutuyee/ShitIDC/internal/provider/baota"
+	"github.com/hutuyee/ShitIDC/internal/provider/custom"
 	"github.com/hutuyee/ShitIDC/internal/provider/magiccube"
 	"github.com/hutuyee/ShitIDC/internal/provider/proxmox"
 	"github.com/hutuyee/ShitIDC/internal/provider/virtualizor"
@@ -88,6 +89,8 @@ func (w *worker) resolve(ctx context.Context, providerID int64, providerType str
 		return w.resolveVirtualizor(ctx, providerID)
 	case "baota":
 		return w.resolveBaota(ctx, providerID)
+	case "custom":
+		return w.resolveCustom(ctx, providerID)
 	default:
 		return nil, fmt.Errorf("unsupported provider_type %q", providerType)
 	}
@@ -107,6 +110,16 @@ func (w *worker) providerSecret(ctx context.Context, providerID int64) (model.Pr
 		return model.Provider{}, "", fmt.Errorf("provider secret decrypt failed: %w", err)
 	}
 	return pv, secret, nil
+}
+
+// resolveCustom 构建声明式上游（魔方插件导入产物）：规格存在 providers.config
+// 的 "spec" 键，token 是接口密钥（对应魔方 accesshash / 服务器密码）。
+func (w *worker) resolveCustom(ctx context.Context, providerID int64) (provider.Provider, error) {
+	pv, secret, err := w.providerSecret(ctx, providerID)
+	if err != nil {
+		return nil, err
+	}
+	return custom.FromProvider(pv, secret)
 }
 
 func (w *worker) resolveMagicCube(ctx context.Context, providerID int64) (provider.Provider, error) {
@@ -203,7 +216,18 @@ func (w *worker) provision(ctx context.Context, t *asynq.Task) error {
 		_ = w.st.MarkService(ctx, serviceID, "failed", "", map[string]any{"error": err.Error()})
 		return err
 	}
-	instance, err := impl.Create(ctx, provider.CreateRequest{RequestID: serviceID, ProductRef: productRef, UserID: userID})
+	// 开通上下文：订单里的配置项与自定义字段（魔方 $params['configoptions']/
+	// $params['customfields'] 的等价物），custom 供应商按模板引用这些值。
+	createOpts := map[string]any{}
+	if pctx, perr := w.st.GetServiceProvisionContext(ctx, serviceID); perr == nil {
+		createOpts["configoptions"] = pctx.ConfigOptions
+		createOpts["customfields"] = pctx.CustomFields
+		createOpts["email"] = pctx.UserEmail
+		if pctx.Quantity > 0 {
+			createOpts["quantity"] = pctx.Quantity
+		}
+	}
+	instance, err := impl.Create(ctx, provider.CreateRequest{RequestID: serviceID, ProductRef: productRef, UserID: userID, Options: createOpts})
 	if err != nil {
 		_ = w.st.MarkService(ctx, serviceID, "failed", "", map[string]any{"error": err.Error()})
 		w.bus.Emit(ctx, events.ServiceFailed, map[string]any{"service_id": serviceID, "error": err.Error()})
@@ -404,7 +428,12 @@ func (w *worker) renew(ctx context.Context, t *asynq.Task) error {
 	}
 	sctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	if err := impl.Renew(sctx, ref.ProviderRef); err != nil {
+	// 到期时间在续费订单支付时已推进，取一次传给上游（魔方 _Renew 约定）。
+	renewReq := provider.RenewRequest{InstanceID: ref.ProviderRef}
+	if inst, gerr := w.st.GetServiceInstance(ctx, serviceID); gerr == nil && inst.Service.ExpiresAt != nil {
+		renewReq.ExpiresAt = *inst.Service.ExpiresAt
+	}
+	if err := impl.Renew(sctx, renewReq); err != nil {
 		_ = w.st.PatchServicePayload(ctx, serviceID, map[string]any{"last_renew_ok": false, "last_renew_error": err.Error()})
 		return err
 	}

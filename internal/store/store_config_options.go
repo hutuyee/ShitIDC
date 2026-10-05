@@ -36,7 +36,7 @@ func (s *Store) ListProductConfigOptions(ctx context.Context, productPublicID st
 // listProductConfigOptionsQ 是 ListProductConfigOptions 的可复用实现，
 // 既接受连接池也接受订单事务。
 func listProductConfigOptionsQ(ctx context.Context, q querior, productPublicID string) ([]model.ConfigOption, error) {
-	rows, err := q.Query(ctx, `SELECT o.public_id::text,o.name,o.description,o.option_type,o.required,o.sort_weight,o.qty_min,o.qty_max
+	rows, err := q.Query(ctx, `SELECT o.public_id::text,o.name,o.provider_key,o.description,o.option_type,o.required,o.sort_weight,o.qty_min,o.qty_max
 FROM config_options o
 JOIN products p ON p.public_id=$1
 LEFT JOIN config_group_links l ON l.group_id=o.group_id AND l.product_id=p.id
@@ -49,7 +49,7 @@ ORDER BY o.sort_weight,o.id`, productPublicID)
 	opts := []model.ConfigOption{}
 	for rows.Next() {
 		var o model.ConfigOption
-		if err := rows.Scan(&o.PublicID, &o.Name, &o.Description, &o.OptionType, &o.Required, &o.SortWeight, &o.QtyMin, &o.QtyMax); err != nil {
+		if err := rows.Scan(&o.PublicID, &o.Name, &o.ProviderKey, &o.Description, &o.OptionType, &o.Required, &o.SortWeight, &o.QtyMin, &o.QtyMax); err != nil {
 			return nil, err
 		}
 		o.Values = []model.ConfigOptionValue{}

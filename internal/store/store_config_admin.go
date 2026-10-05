@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 
@@ -13,6 +14,7 @@ import (
 
 type ConfigOptionInput struct {
 	Name        string
+	ProviderKey string // 传给 Provider 的键名（魔方插件导入后用于映射上游参数）
 	Description string
 	OptionType  int
 	Required    bool
@@ -46,8 +48,8 @@ func (s *Store) CreateConfigOption(ctx context.Context, productPublicID string, 
 	}
 	var optID int64
 	var optPublic string
-	if err := tx.QueryRow(ctx, `INSERT INTO config_options(product_id,name,description,option_type,required,sort_weight,qty_min,qty_max) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id,public_id::text`,
-		productID, in.Name, in.Description, in.OptionType, in.Required, in.SortWeight, maxInt(in.QtyMin, 1), defaultInt(in.QtyMax, 100)).Scan(&optID, &optPublic); err != nil {
+	if err := tx.QueryRow(ctx, `INSERT INTO config_options(product_id,name,provider_key,description,option_type,required,sort_weight,qty_min,qty_max) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id,public_id::text`,
+		productID, in.Name, strings.TrimSpace(in.ProviderKey), in.Description, in.OptionType, in.Required, in.SortWeight, maxInt(in.QtyMin, 1), defaultInt(in.QtyMax, 100)).Scan(&optID, &optPublic); err != nil {
 		return model.ConfigOption{}, err
 	}
 	for i, v := range in.Values {
@@ -76,7 +78,7 @@ func (s *Store) UpdateConfigOption(ctx context.Context, optionPublicID string, i
 		}
 		return err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE config_options SET name=$2,description=$3,option_type=$4,required=$5,sort_weight=$6,qty_min=$7,qty_max=$8,updated_at=now() WHERE id=$1`, optID, in.Name, in.Description, in.OptionType, in.Required, in.SortWeight, maxInt(in.QtyMin, 1), defaultInt(in.QtyMax, 100)); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE config_options SET name=$2,provider_key=$3,description=$4,option_type=$5,required=$6,sort_weight=$7,qty_min=$8,qty_max=$9,updated_at=now() WHERE id=$1`, optID, in.Name, strings.TrimSpace(in.ProviderKey), in.Description, in.OptionType, in.Required, in.SortWeight, maxInt(in.QtyMin, 1), defaultInt(in.QtyMax, 100)); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(ctx, `DELETE FROM config_option_values v WHERE v.option_id=$1 AND NOT EXISTS (SELECT 1 FROM order_items oi WHERE oi.config_selections @> jsonb_build_array(jsonb_build_object('value_id', v.public_id::text)))`, optID); err != nil {

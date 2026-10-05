@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { NButton, NCheckbox, NInput, NInputNumber, NSelect, NSwitch, NTag, useMessage } from 'naive-ui'
+import { NButton, NCheckbox, NInput, NInputNumber, NModal, NSelect, NSwitch, NTag, useMessage } from 'naive-ui'
 import { api, dataOf } from '../api'
 import EntityPicker from '../components/EntityPicker.vue'
 
@@ -124,6 +124,88 @@ async function importProduct(item: any) {
 const money = (p: any) => `${p.currency === 'CNY' ? '¥' : (p.currency || 'CNY') + ' '}${(Number(p.price_cents || 0) / 100).toFixed(2)}`
 const statusText = (s: string) => ({ online: '连接正常', error: '连接异常', unknown: '未测试' } as any)[s] || s
 
+// ---- 魔方插件导入（zip → custom 供应商）与规格编辑 ----
+const zjmfModal = ref(false)
+const zjmfFile = ref<File | null>(null)
+const zjmfPreview = ref<any | null>(null)
+const zjmfForm = ref({ base_url: '', token: '' })
+const zjmfBusy = ref(false)
+const specModal = ref(false)
+const specText = ref('')
+const specProvider = ref<any | null>(null)
+
+const authName: Record<string, string> = {
+  md5sort_upper: 'MD5 排序大写（bthosts/nokvm）',
+  md5concat: 'MD5 拼接（kangle 系）',
+  unsupported: '无法转换（如 PVE ticket）',
+}
+const actionName: Record<string, string> = {
+  test: '连接测试', create: '开通', suspend: '暂停', unsuspend: '解除暂停',
+  terminate: '删除', renew: '续费', change_package: '升降级', sync: '同步',
+  status: '状态', password: '改密',
+}
+
+function pickZJMFFile(ev: Event) {
+  const input = ev.target as HTMLInputElement
+  zjmfFile.value = input.files?.[0] || null
+  zjmfPreview.value = null
+}
+
+async function previewZJMF() {
+  if (!zjmfFile.value) { message.warning('请先选择魔方插件 zip'); return }
+  zjmfBusy.value = true
+  try {
+    const fd = new FormData()
+    fd.append('file', zjmfFile.value)
+    const d = dataOf<any>(await api.post('/admin/providers/zjmf-import', fd, { headers: { 'Content-Type': 'multipart/form-data' } }))
+    zjmfPreview.value = d.spec
+    message.success('转换完成，请检查识别结果后填写上游信息')
+  } catch (e: any) { message.error(e?.response?.data?.error?.message || '转换失败') }
+  finally { zjmfBusy.value = false }
+}
+
+async function applyZJMF() {
+  if (!zjmfFile.value || !zjmfPreview.value) return
+  if (!zjmfForm.value.base_url || !zjmfForm.value.token) { message.warning('请填写上游接口地址与接口密钥'); return }
+  zjmfBusy.value = true
+  try {
+    const fd = new FormData()
+    fd.append('file', zjmfFile.value)
+    fd.append('apply', 'true')
+    fd.append('base_url', zjmfForm.value.base_url)
+    fd.append('token', zjmfForm.value.token)
+    await api.post('/admin/providers/zjmf-import', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+    message.success('魔方插件已导入为供应商，建议先「测试连接」再绑定商品')
+    zjmfModal.value = false
+    zjmfFile.value = null; zjmfPreview.value = null
+    zjmfForm.value = { base_url: '', token: '' }
+    await loadProviders()
+  } catch (e: any) { message.error(e?.response?.data?.error?.message || '导入失败') }
+  finally { zjmfBusy.value = false }
+}
+
+async function openSpec(p: any) {
+  specProvider.value = p
+  try {
+    const d = dataOf<any>(await api.get(`/admin/providers/${p.id}/spec`))
+    specText.value = JSON.stringify(d, null, 2)
+    specModal.value = true
+  } catch (e: any) { message.error(e?.response?.data?.error?.message || '读取规格失败') }
+}
+
+async function saveSpec() {
+  if (!specProvider.value) return
+  try {
+    const parsed = JSON.parse(specText.value)
+    await api.put(`/admin/providers/${specProvider.value.id}/spec`, { spec: parsed })
+    message.success('规格已保存')
+    specModal.value = false
+    await loadProviders()
+  } catch (e: any) {
+    message.error(e?.response?.data?.error?.message || (e instanceof SyntaxError ? '规格不是合法 JSON' : '保存失败'))
+  }
+}
+
 // ---- 魔方（ZJMF）上游访问密钥：把 ShitIDC 当成魔方财务的上游接口 ----
 const upstreamKeys = ref<any[]>([]);
 const upstreamMeta = ref<any>({ base_url: '', test_path: '', host_path: '', prod_path: '' });
@@ -223,13 +305,13 @@ onMounted(() => { loadProviders(); loadUpstreamKeys(); })
     </div>
 
     <section class="panel provider-list-panel">
-      <div class="panel-title-row"><div><h2>已配置供应商</h2><span>{{ providers.length }} 个供应商</span></div></div>
+      <div class="panel-title-row"><div><h2>已配置供应商</h2><span>{{ providers.length }} 个供应商</span></div><NButton size="small" type="primary" secondary @click="zjmfModal = true">导入魔方插件</NButton></div>
       <div v-if="providers.length" class="provider-list">
         <article v-for="p in providers" :key="p.id" class="provider-row">
-          <div class="provider-logo">M</div>
-          <div class="provider-main"><div><b>{{ p.name }}</b><span class="provider-kind">魔方财务</span></div><small>{{ p.base_url }}</small><small>{{ p.username }}</small></div>
+          <div class="provider-logo">{{ p.provider_type === 'custom' ? 'Z' : 'M' }}</div>
+          <div class="provider-main"><div><b>{{ p.name }}</b><span class="provider-kind">{{ p.provider_type === 'custom' ? '魔方插件导入' : '魔方财务' }}</span></div><small>{{ p.base_url }}</small><small>{{ p.username }}</small></div>
           <div class="provider-state"><span class="state-pill" :class="p.status">● {{ statusText(p.status) }}</span><small v-if="p.last_checked_at">检测 {{ new Date(p.last_checked_at).toLocaleString() }}</small><small v-if="p.last_error" class="error-text">{{ p.last_error }}</small></div>
-          <div class="provider-actions"><NButton size="small" @click="testProvider(p)">测试连接</NButton><NButton size="small" type="primary" :loading="busy" @click="syncProvider(p)">同步产品</NButton><NButton size="small" secondary @click="showProducts(p)">查看商品</NButton><NButton size="small" tertiary @click="editProvider(p)">编辑</NButton></div>
+          <div class="provider-actions"><NButton size="small" @click="testProvider(p)">测试连接</NButton><NButton v-if="p.provider_type === 'custom'" size="small" secondary @click="openSpec(p)">查看规格</NButton><NButton v-if="p.provider_type !== 'custom'" size="small" type="primary" :loading="busy" @click="syncProvider(p)">同步产品</NButton><NButton v-if="p.provider_type !== 'custom'" size="small" secondary @click="showProducts(p)">查看商品</NButton><NButton size="small" tertiary @click="editProvider(p)">编辑</NButton></div>
         </article>
       </div>
       <div v-else class="empty-box">还没有上游供应商。先在上面的表单添加一个魔方财务网站。</div>
@@ -293,5 +375,51 @@ onMounted(() => { loadProviders(); loadUpstreamKeys(); })
       </div></div>
       <div v-else class="empty-box">还没有生成接口密钥。</div>
     </section>
+
+    <NModal v-model:show="zjmfModal" preset="card" title="导入魔方 server 插件" style="max-width:640px">
+      <div class="stack" style="gap:12px">
+        <p class="muted" style="margin:0">
+          上传魔方财务的 server 模块 zip（public/plugins/servers/&lt;标识&gt;/ 打包，或应用商店下载的插件包）。
+          系统会静态解析 PHP 源码并转换成声明式上游规格：识别签名算法、生命周期路径与配置项；
+          识别不了的部分会列在警告里，导入后可点「查看规格」继续补充。
+        </p>
+        <label class="stack" style="gap:4px"><span>插件包 zip</span><input type="file" accept=".zip" @change="pickZJMFFile" /></label>
+        <NButton size="small" :loading="zjmfBusy && !zjmfPreview" @click="previewZJMF">转换预览</NButton>
+
+        <div v-if="zjmfPreview" class="security-note" style="margin:0">
+          <b>{{ zjmfPreview.display_name || zjmfPreview.slug }} <span v-if="zjmfPreview.source_version" class="muted">v{{ zjmfPreview.source_version }}</span></b>
+          <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:6px">
+            <NTag size="small" round>{{ authName[zjmfPreview.auth?.scheme] || zjmfPreview.auth?.scheme }}</NTag>
+            <NTag v-for="(a, k) in zjmfPreview.actions" :key="k" size="small" :type="a.path ? 'success' : 'warning'" round>{{ actionName[k] || k }}{{ a.path ? '' : '（路径缺失）' }}</NTag>
+          </div>
+          <div v-if="zjmfPreview.config_options?.length" style="margin-top:6px">识别到 {{ zjmfPreview.config_options.length }} 个产品配置项（导入后可在商品配置项里用 provider_key 映射上游参数）。</div>
+          <ul v-if="zjmfPreview.warnings?.length" style="margin:8px 0 0;padding-left:18px">
+            <li v-for="(w, i) in zjmfPreview.warnings" :key="i" class="muted">{{ w }}</li>
+          </ul>
+        </div>
+
+        <template v-if="zjmfPreview">
+          <div class="form-grid">
+            <label class="full"><span>上游接口地址</span><NInput v-model:value="zjmfForm.base_url" placeholder="https://1.2.3.4:8888" /><small>由魔方接口设置里的 IP/端口/SSL 组成。</small></label>
+            <label class="full"><span>接口密钥</span><NInput v-model:value="zjmfForm.token" type="password" show-password-on="click" placeholder="accesshash（nokvm 类模块填服务器密码）" /></label>
+          </div>
+          <div class="row" style="justify-content:flex-end;gap:8px">
+            <NButton size="small" @click="zjmfModal = false">取消</NButton>
+            <NButton size="small" type="primary" :loading="zjmfBusy" @click="applyZJMF">导入为供应商</NButton>
+          </div>
+        </template>
+      </div>
+    </NModal>
+
+    <NModal v-model:show="specModal" preset="card" :title="`规格 · ${specProvider?.name || ''}`" style="max-width:760px">
+      <div class="stack" style="gap:12px">
+        <p class="muted" style="margin:0">声明式上游规格（JSON）。转换器没识别出的路径/参数可以在这里直接补。保存后建议重新「测试连接」。</p>
+        <NInput v-model:value="specText" type="textarea" :rows="20" style="font-family:monospace" />
+        <div class="row" style="justify-content:flex-end;gap:8px">
+          <NButton size="small" @click="specModal = false">取消</NButton>
+          <NButton size="small" type="primary" @click="saveSpec">保存规格</NButton>
+        </div>
+      </div>
+    </NModal>
   </div>
 </template>

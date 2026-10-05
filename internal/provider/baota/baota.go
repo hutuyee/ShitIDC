@@ -327,7 +327,7 @@ func (c *Client) Terminate(ctx context.Context, ref string) error {
 }
 
 // Renew 对宝塔站点是空操作：到期时间由 ShitIDC 自己记账，面板侧无需改动。
-func (c *Client) Renew(context.Context, string) error { return nil }
+func (c *Client) Renew(context.Context, provider.RenewRequest) error { return nil }
 
 // ChangePackage 说明宝塔站点不支持在线改配（套餐由面板侧资源决定），
 // 交给调用方做本地记账即可。

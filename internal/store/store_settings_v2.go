@@ -102,3 +102,26 @@ func (s *Store) GetStorefrontSettings(ctx context.Context) (StorefrontSettings, 
 func (s *Store) SaveStorefrontSettings(ctx context.Context, settings StorefrontSettings) error {
 	return s.settingSave(ctx, "storefront", settings)
 }
+
+// ---- marketplace settings (插件市场) ----
+
+// MarketplaceSettings 控制市场索引来源。
+type MarketplaceSettings struct {
+	// IndexURL 为空时用内置默认索引（见 internal/marketplace.DefaultIndexURL）。
+	IndexURL string `json:"index_url"`
+}
+
+// GetMarketplaceSettings 读取市场设置；没有保存过时返回零值。
+func (s *Store) GetMarketplaceSettings(ctx context.Context) (MarketplaceSettings, error) {
+	var v MarketplaceSettings
+	err := s.settingGet(ctx, "marketplace", &v)
+	if errors.Is(err, ErrNotFound) {
+		return MarketplaceSettings{}, nil
+	}
+	return v, err
+}
+
+// SaveMarketplaceSettings 保存市场设置。
+func (s *Store) SaveMarketplaceSettings(ctx context.Context, v MarketplaceSettings) error {
+	return s.settingSave(ctx, "marketplace", v)
+}

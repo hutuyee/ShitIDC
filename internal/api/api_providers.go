@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/hutuyee/ShitIDC/internal/provider"
 	"github.com/hutuyee/ShitIDC/internal/provider/baota"
+	"github.com/hutuyee/ShitIDC/internal/provider/custom"
 	"github.com/hutuyee/ShitIDC/internal/provider/magiccube"
 	"github.com/hutuyee/ShitIDC/internal/provider/proxmox"
 	"github.com/hutuyee/ShitIDC/internal/provider/virtualizor"
@@ -70,6 +71,12 @@ func (a *App) resolveProviderClient(ctx context.Context, pv model.Provider, secr
 		}
 		cfg.APIKey, cfg.APIPass = keys.APIKey, keys.APIPass
 		return virtualizor.New(cfg)
+	case "custom":
+		// 声明式上游（魔方插件导入产物）：规格在 config.spec，密钥即接口 token。
+		if _, ok := pv.Config["spec"]; !ok {
+			return nil, fmt.Errorf("custom 供应商缺少 config.spec 规格")
+		}
+		return custom.FromProvider(pv, secret)
 	}
 	return nil, fmt.Errorf("unsupported provider_type %q", pv.ProviderType)
 }

@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"errors"
+	"time"
 )
 
 type CreateRequest struct {
@@ -32,13 +33,21 @@ type ChangePackageRequest struct {
 // change" rather than a hard failure.
 var ErrChangePackageUnsupported = errors.New("provider does not support changing an existing instance's package")
 
+// RenewRequest 描述一次续费：上游需要新到期时间（魔方 server 模块的
+// _Renew 就把 $params['nextduedate'] 同步给上游），调用方没有到期时间时
+// 传零值，由上游按自己的周期处理。
+type RenewRequest struct {
+	InstanceID string
+	ExpiresAt  time.Time
+}
+
 type Provider interface {
 	TestConnection(context.Context) error
 	Create(context.Context, CreateRequest) (*Instance, error)
 	Suspend(context.Context, string) error
 	Unsuspend(context.Context, string) error
 	Terminate(context.Context, string) error
-	Renew(context.Context, string) error
+	Renew(context.Context, RenewRequest) error
 	// ChangePackage applies an upgrade/downgrade to an existing instance.
 	ChangePackage(context.Context, ChangePackageRequest) error
 }
@@ -52,5 +61,5 @@ func (Manual) Create(_ context.Context, req CreateRequest) (*Instance, error) {
 func (Manual) Suspend(context.Context, string) error                     { return nil }
 func (Manual) Unsuspend(context.Context, string) error                   { return nil }
 func (Manual) Terminate(context.Context, string) error                   { return nil }
-func (Manual) Renew(context.Context, string) error                       { return nil }
+func (Manual) Renew(context.Context, RenewRequest) error                 { return nil }
 func (Manual) ChangePackage(context.Context, ChangePackageRequest) error { return nil }

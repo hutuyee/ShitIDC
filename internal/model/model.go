@@ -67,6 +67,7 @@ type Product struct {
 type ConfigOption struct {
 	PublicID    string              `json:"id"`
 	Name        string              `json:"name"`
+	ProviderKey string              `json:"provider_key"` // 传给 Provider 的键名（魔方 configoptions key），空则用名称
 	Description string              `json:"description"`
 	OptionType  int                 `json:"option_type"`
 	Required    bool                `json:"required"`

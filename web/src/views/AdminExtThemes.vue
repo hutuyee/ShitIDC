@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { NButton, NTag, useMessage } from 'naive-ui'
+import { NButton, NModal, NTag, useMessage } from 'naive-ui'
 import { api, dataOf } from '../api'
 
 const message = useMessage()
@@ -8,6 +8,15 @@ const extensions = ref<any[]>([])
 const themes = ref<any[]>([])
 const storefront = ref<any>({})
 const logs = ref<Record<string, string[]>>({})
+
+// ---- 插件市场 ----
+const marketItems = ref<any[]>([])
+const marketSource = ref('')
+const marketURL = ref('')
+const marketLoading = ref(false)
+const installing = ref('')
+// zjmf-plugin 安装需要上游地址与密钥
+const zjmfForm = ref<{ item: any; base_url: string; token: string } | null>(null)
 
 async function load() {
   try {
@@ -22,6 +31,59 @@ async function load() {
   } catch (e: any) { message.error(e?.response?.data?.error?.message || '读取失败') }
 }
 
+async function loadMarketSettings() {
+  try {
+    const v = dataOf<any>(await api.get('/admin/marketplace/settings'))
+    marketURL.value = v?.index_url || ''
+  } catch { /* 未配置时保持空 */ }
+}
+
+async function loadMarket(urlOverride?: string) {
+  marketLoading.value = true
+  try {
+    const q = (urlOverride || marketURL.value) ? `?url=${encodeURIComponent(urlOverride || marketURL.value)}` : ''
+    const v = dataOf<any>(await api.get(`/admin/marketplace${q}`))
+    marketItems.value = v.items || []
+    marketSource.value = v.source_url || ''
+  } catch (e: any) { message.error(e?.response?.data?.error?.message || '拉取市场索引失败') }
+  finally { marketLoading.value = false }
+}
+
+async function saveMarketURL() {
+  try {
+    await api.put('/admin/marketplace/settings', { index_url: marketURL.value })
+    message.success('市场索引地址已保存')
+    await loadMarket()
+  } catch (e: any) { message.error(e?.response?.data?.error?.message || '保存失败') }
+}
+
+const kindName: Record<string, string> = { 'extension': 'WASM 扩展', 'theme': '主题', 'zjmf-plugin': '魔方插件' }
+
+async function installItem(it: any) {
+  if (it.kind === 'zjmf-plugin') { zjmfForm.value = { item: it, base_url: '', token: '' }; return }
+  installing.value = it.name
+  try {
+    await api.post('/admin/marketplace/install', { kind: it.kind, name: it.name })
+    message.success(`${it.title || it.name} 安装成功${it.kind === 'extension' ? '，请在扩展列表启用' : ''}`)
+    await Promise.all([load(), loadMarket()])
+  } catch (e: any) { message.error(e?.response?.data?.error?.message || '安装失败') }
+  finally { installing.value = '' }
+}
+
+async function installZJMF() {
+  if (!zjmfForm.value) return
+  const { item, base_url, token } = zjmfForm.value
+  installing.value = item.name
+  try {
+    await api.post('/admin/marketplace/install', { kind: item.kind, name: item.name, base_url, token })
+    message.success('魔方插件已导入为 custom 供应商，请在「供应商」页测试连接')
+    zjmfForm.value = null
+    await loadMarket()
+  } catch (e: any) { message.error(e?.response?.data?.error?.message || '导入失败') }
+  finally { installing.value = '' }
+}
+
+// ---- 扩展 / 主题 ----
 async function upload(kind: 'extensions' | 'themes', ev: Event) {
   const input = ev.target as HTMLInputElement
   if (!input.files?.length) return
@@ -74,12 +136,39 @@ async function deleteTheme(id: string) {
   } catch (e: any) { message.error(e?.response?.data?.error?.message || '删除失败') }
 }
 
-onMounted(load)
+onMounted(() => { load(); loadMarketSettings() })
 </script>
 
 <template>
   <div class="admin-page">
-    <div class="admin-page-head"><div><div class="eyebrow">扩展与主题</div><h1>扩展包 / 主题包</h1><p>扩展为 WASM 沙箱模块（能力权限最小化，崩溃不影响核心）；主题仅含静态资源（CSS 变量契约），上传前自动做 Zip Slip / 文件类型校验。</p></div></div>
+    <div class="admin-page-head"><div><div class="eyebrow">扩展与主题</div><h1>扩展包 / 主题包 / 插件市场</h1><p>扩展为 WASM 沙箱模块（能力权限最小化，崩溃不影响核心）；主题仅含静态资源；插件市场可一键安装扩展、主题与魔方 server 插件（自动转换为 custom 供应商）。</p></div></div>
+
+    <section class="panel" style="margin-bottom:20px">
+      <div class="panel-title-row">
+        <div><h2>插件市场</h2><span>{{ marketItems.length ? `${marketItems.length} 个可安装项` : '未加载' }}</span></div>
+        <div class="row" style="gap:8px;align-items:center">
+          <input v-model="marketURL" placeholder="市场索引地址（index.json），留空用官方索引" style="width:320px" class="text-input" />
+          <NButton size="small" tertiary @click="saveMarketURL">保存地址</NButton>
+          <NButton size="small" type="primary" :loading="marketLoading" @click="loadMarket()">刷新市场</NButton>
+        </div>
+      </div>
+      <div class="stack">
+        <div v-for="it in marketItems" :key="it.kind + it.name" class="ext-row">
+          <div class="ext-main">
+            <b>{{ it.title || it.name }} <small class="muted">v{{ it.version }} · {{ kindName[it.kind] || it.kind }}</small></b>
+            <small class="muted">{{ it.description || '—' }}</small>
+            <small class="row" style="gap:4px;flex-wrap:wrap">
+              <NTag v-for="pm in it.permissions || []" :key="pm" size="tiny" round>{{ pm }}</NTag>
+              <NTag v-if="it.installed" size="tiny" type="success" round>已安装{{ it.upgradable ? `（可升级到 v${it.version}）` : '' }}</NTag>
+            </small>
+          </div>
+          <NButton v-if="!it.installed || it.upgradable" size="small" type="primary" :loading="installing === it.name" @click="installItem(it)">{{ it.upgradable ? '升级' : '安装' }}</NButton>
+          <NButton v-else-if="it.kind === 'zjmf-plugin'" size="small" tertiary @click="$router?.push?.('/admin/providers')">前往配置</NButton>
+          <NTag v-else size="small" round>已安装</NTag>
+        </div>
+        <div v-if="!marketItems.length && !marketLoading" class="empty-box" style="margin:0">市场索引未加载。点「刷新市场」从索引地址拉取；也可以自托管市场（见 docs/marketplace.md）。</div>
+      </div>
+    </section>
 
     <div class="admin-two-col">
       <section class="panel">
@@ -127,6 +216,26 @@ onMounted(load)
         </div>
       </section>
     </div>
+
+    <NModal :show="zjmfForm !== null" preset="card" title="安装魔方插件" style="max-width:520px" @update:show="(v: boolean) => { if (!v) zjmfForm = null }">
+      <div v-if="zjmfForm" class="stack" style="gap:12px">
+        <p class="muted" style="margin:0">
+          将把魔方 server 插件 <b>{{ zjmfForm.item.title || zjmfForm.item.name }}</b>
+          转换为 custom 供应商。请填写上游接口地址（由魔方接口设置里的
+          IP/端口/SSL 组成）与接口密钥（accesshash）。
+        </p>
+        <label class="stack" style="gap:4px"><span>上游接口地址</span>
+          <input v-model="zjmfForm.base_url" placeholder="https://1.2.3.4:8888" class="text-input" />
+        </label>
+        <label class="stack" style="gap:4px"><span>接口密钥（accesshash）</span>
+          <input v-model="zjmfForm.token" placeholder="上游接口的签名密钥" class="text-input" />
+        </label>
+        <div class="row" style="justify-content:flex-end;gap:8px">
+          <NButton size="small" @click="zjmfForm = null">取消</NButton>
+          <NButton size="small" type="primary" :loading="installing === zjmfForm.item.name" @click="installZJMF">导入</NButton>
+        </div>
+      </div>
+    </NModal>
   </div>
 </template>
 
@@ -136,4 +245,5 @@ onMounted(load)
 .ext-main small { font-size: 12px; }
 .ext-log { border: 1px solid var(--border, #e5e8f0); border-radius: 8px; padding: 8px 10px; }
 .ext-log pre { margin: 4px 0 0; font-size: 11px; white-space: pre-wrap; max-height: 180px; overflow: auto; }
+.text-input { border: 1px solid var(--border, #e5e8f0); border-radius: 6px; padding: 5px 8px; background: transparent; color: inherit; font-size: 13px; }
 </style>
