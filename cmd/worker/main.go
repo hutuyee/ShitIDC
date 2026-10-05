@@ -439,6 +439,9 @@ func (w *worker) lifecycle(ctx context.Context, t *asynq.Task, action string) er
 		if err := w.st.FinalizeServiceTransition(ctx, serviceID, "terminated", true, ""); err != nil {
 			return err
 		}
+		if err := w.st.RecordExpiredIPLog(ctx, serviceID); err != nil {
+			log.Printf("expired ip log %s: %v", serviceID, err)
+		}
 		w.bus.Emit(ctx, events.ServiceTerminated, map[string]any{"service_id": serviceID, "user_uid": ref.UserID})
 	}
 	return nil
