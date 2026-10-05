@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { NButton, NInput, NModal, NTag, useMessage } from 'naive-ui'
 import { api, dataOf } from '../api'
+import { ADMIN_PATH } from '../adminPath'
 
 const message = useMessage()
 const orders = ref<any[]>([])
@@ -82,10 +83,10 @@ onMounted(load)
           <span><NTag :type="statusType(o.status)" size="small" round>{{ statusText(o.status) || o.status }}</NTag></span>
           <span class="muted">{{ o.payment ? `${o.payment.method}${o.payment.type ? ' / ' + o.payment.type : ''}` : (o.status === 'unpaid' ? '未支付' : '钱包') }}</span>
           <span class="muted">{{ fmt(o.created_at) }}</span>
-          <span>
+          <span class="row" style="gap:6px">
             <NButton v-if="o.status === 'completed'" size="tiny" tertiary type="warning" @click="openRefund(o)">退款</NButton>
             <NButton v-else-if="o.status === 'unpaid'" size="tiny" tertiary type="primary" @click="confirmPayment(o)">确认收款</NButton>
-            <span v-else class="muted">—</span>
+            <router-link :to="`${ADMIN_PATH}/order-costs?order_id=${o.id}`"><NButton size="tiny" tertiary>成本支出</NButton></router-link>
           </span>
         </div>
       </div></div>
