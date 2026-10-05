@@ -834,7 +834,7 @@ CBAP 包 gateway 目录的明文插件此前大多已对齐，本轮清掉最后
 
 ### 10.10 待办事项 widget（widget/ToDo）与实名审核页（本轮补齐）
 
-CBAP 包 `widget/` 下只有一个插件 `ToDo`：管理端首页把各附属插件的待处理数量聚合成一张卡片，装了哪个插件就显示哪一项，点击跳转到对应插件页（`template/` 的 cart1/cart2 与 `sub_server/` 的 bthostx/kanghostx 仍在队列中）。ShitIDC 按同样口径落地为管理控制台「待办事项」面板（`GET /admin/todos`）：
+CBAP 包 `widget/` 下只有一个插件 `ToDo`：管理端首页把各附属插件的待处理数量聚合成一张卡片，装了哪个插件就显示哪一项，点击跳转到对应插件页（`sub_server/` 的 bthostx/kanghostx 已补齐，见 §10.11/§10.12；`template/` 的 cart1/cart2 与 Mf101 见 §10.13）。ShitIDC 按同样口径落地为管理控制台「待办事项」面板（`GET /admin/todos`）：
 
 | 魔方 ToDo 项 | ShitIDC 数据口径 | 落地页 |
 |---|---|---|
@@ -908,3 +908,28 @@ CBAP 包 `sub_server/kanghostx` 是「Kangle对接模块（V10版）」：面板
 验证：`gofmt` / `go build ./...` / `go vet` / `vue-tsc --noEmit`。
 
 > 备注：仓库既有的 `baota` Provider 面向宝塔面板的站点接口（`sites?action=*`），与本轮的 `/api/vhost/*` 不是同一上游，两者并存。
+
+### 10.13 template 插件（cart1/cart2 购物车皮肤、Mf101 官网模板）（本轮说明）
+
+CBAP 包 `template/` 下是上游的 **PHP 前台皮肤**，不是可移植的服务端模块：
+
+- `cart1.zip` / `cart2.zip`：PC 购物车主题皮肤（`cart/template/pc/cart1|c2`，含 goods / goodsList / shoppingCar / settlement / goods_iframe 页面与配套 js/css），两套几乎相同、仅样式有差异；
+- `Mf101.zip`：整套静态官网模板（226 个文件，`web/mf101` 下 html 与 assets）。
+
+皮肤形态与本站 SPA 不同，不逐文件移植；对齐的是它承载的功能面——购物车与结算。其调用的后端能力（购物车、优惠码、等级优惠、活动促销、结算付款）此前已在 §2.89 就绪，本轮缺的只是前台界面，现已补齐（提交 `8afbc79`、`63eb29f`）：
+
+- 新增 `web/src/views/Cart.vue`：改数量 / 移除 / 清空 / 优惠码 / 结算弹窗；余额可整批一次支付，余额不足引导到钱包；
+- 路由 `/cart` + 顶栏「购物车」入口 + 商品页购买弹窗双按钮（「加入购物车」/「创建订单」）；
+- 后端加购支持指定币种（`AddCartItemWithCurrency`）：`currency` 非空时按币种精确匹配 `product_prices`，为空回退首个可用币种——多币种商品在购物车里保持用户选中的币种。
+
+购物车口径与 §2.89 一致：不存价格（每次读取重算）、结算只锁价不收钱、一个结算批一次付清、付款带幂等键。
+
+有意差异 / 未落地：
+
+- 皮肤里嵌的域名注册行（`idcsmart_domain` 的 domain_suffix / check_domain / get_price / whois / 信息模板 / 批量查询）与 `e_contract` 电子合同（EContract 插件加密）不迁移——对应插件不在本轮范围（域名类见 §9.4 明确跳过）；
+- 皮肤自带的菜单 / 合同类前端接口同属上述插件，一并跳过；
+- Mf101 属浏览式静态官网模板，与 SPA 形态不同，不搬运（官网职能由 SPA 承担）。
+
+导入侧说明：`template/` 与 `internal/zjmfimport`（魔方 server 模块导入器）无交集，导入流程不受影响。
+
+验证：两笔提交的静态检查均通过（`gofmt` / `go build ./...` / `go vet` / `vue-tsc --noEmit`）。
