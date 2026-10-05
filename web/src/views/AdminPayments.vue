@@ -19,6 +19,7 @@ async function loadSupported() {
       xunhupay: '虎皮椒聚合支付（xunhupay）',
       goallpay: 'GoAllPay 全球聚合支付（goallpay）',
       ocgcpay: 'OCGC 酷云支付（ocgcpay）',
+      global_alipay: '支付宝国际支付（global_alipay）',
     }
     methodOptions.value = methods.map((m: string) => ({ label: methodLabels[m] || m, value: m }))
   } catch { /* keep default */ }
