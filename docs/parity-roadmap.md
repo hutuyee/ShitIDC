@@ -979,7 +979,7 @@ CBAP 仓库 `plugins/addon/` 下 30 个 zip 经逐个检查：**包内全部 `.p
 | IdcsmartRecommend | 推荐/关联商品：分组、排序、复制 | 未落地（商品页仅有「推荐商品」标记） |
 | IdcsmartSale | 销售统计：消费排名、时间窗图表 | 部分（统计页已有；业务经理维度见 §10.8 说明） |
 | IdcsmartStatistics | 统计图表 | 已对齐（后台统计/仪表盘） |
-| IdcsmartVoucher | 代金券：发放/使用/次数 | 未落地（站内优惠券是码核销式，非发放式） |
+| IdcsmartVoucher | 代金券：发放/使用/次数 | 已对齐（§10.21） |
 | IdcsmartWebhook | 消息推送（钉钉/企业微信等） | 已对齐（internal/webhook + 后台 Webhook 页） |
 | ManualResource | 手动资源：供应商、noVNC 控制台 | 未落地 |
 | NoticeSendMerge | 通知合并发送 | 未落地 |
@@ -1110,5 +1110,29 @@ CBAP 包 `addon/Product{Cert,Cycle,Related}Limit.zip` 的 PHP 全部 ionCube 加
 - 捆绑在整车维度校验：同一结算批次即视为「同时购买」；单服务续费无法在同一单里续费关联商品，续费只校验必需 / 互斥，捆绑仅购买时校验（已知差异）；
 - 插件对退款的联动（捆绑商品退款同步退款）站内未做跨订单联动：站内退款按订单退回原支付渠道（已知差异）；
 - 插件 type 1/2/3 的「个人 / 企业」区分在本站实名体系中不存在，统一按已实名处理。
+
+验证：`gofmt` / `go build ./...` / `go vet` / `vue-tsc --noEmit`。
+
+### 10.21 IdcsmartVoucher 插件（代金券）（本轮补齐）
+
+CBAP 包 `addon/IdcsmartVoucher.zip` 的 PHP 全部 ionCube 加密，前端 `template/admin/api/voucher.js`、`js/create_voucher.js`、`js/index.js`、`create_voucher.html`、`lang/zh-cn.js` 可读，接口与字段面取自这些文件。
+
+| 维度 | 参考实现（插件前端契约） | ShitIDC 落地 |
+|---|---|---|
+| 券定义 | code（8 位且含大写 / 小写 / 数字）、price、type（private/public）、num（0=不限）、start_time/end_time（Unix 秒）、product[]、product_need[]、min_price、user_type（no_limit/no_host/need_active）、onetime、upgrade_use、renew_use、cycle[]、notes | `vouchers` 表（035 迁移）同名字段；券码 / 类型 / 面额创建后不可改（与插件表单禁用项一致） |
+| 领取 / 发放 | 公开券前台领取；后台发放支持全选与按 id/username/phone/email 搜索 | `voucher_grants` 表（source=claim/grant）；`POST /vouchers/:id/claim`、`POST /admin/vouchers/:id/send`（client_id 为 "all" 或用户数组；num>0 时按总量顺序发放、发完即止并回报 skipped） |
+| 核销 | 下单 / 续费 / 升降级时按订单金额抵扣（不超过应付金额），受 upgrade_use / renew_use / onetime / min_price / cycle / product / product_need / user_type 限制 | `voucherCheck` 事务内校验并返回券后金额：单品下单、购物车结算（自动挑第一条商品 / 周期匹配的明细）、续费、升级四条链路；同一用户命中最早一条未使用记录并 `FOR UPDATE` 锁定；下单即核销，订单取消不返还（与站内优惠券同口径） |
+| 使用次数 / 记录 | POST /voucher/:id/times（按用户发放次数）；GET /voucher/record（client_id/page/limit/use/voucher_id） | `POST /admin/vouchers/:id/times`；`GET /admin/vouchers/record`（voucher_id / keywords / use（0 未使用 1 已使用）/ page / limit），`DELETE /admin/vouchers/record/:id` |
+| 接口 | GET /voucher、POST /voucher、GET/PUT/DELETE /voucher/:id、POST /voucher/:id/{enable,disable,send,times}、GET /voucher/check、GET /voucher/record、DELETE /voucher/record/:id | `/admin/vouchers*` 同名语义（voucher.manage + CSRF + 审计）；前台 `/vouchers/my`、`/vouchers/claimable`、`/vouchers/preview`（下单前预校验抵扣金额） |
+| 后台页面 | 插件自带管理页 | `/admin/vouchers`：券码 / 状态筛选，创建 / 编辑，启停，发放弹窗（全部用户 / 搜索多选 + 已发放次数），记录弹窗（来源 / 状态 / 订单 / 领取与使用时间，分页，删除） |
+| 用户侧 | clientarea：领取与结算时选券 | `/vouchers`「我的代金券」：可领取公开券列表 + 我的券（状态 / 复制券码）；购物车、商品购买弹窗、服务升级弹窗支持填码预校验并随单提交 |
+
+口径说明（加密代码无法比对，按可见契约的最保守解释）：
+
+- 站内「优惠券」是公开的码核销式折扣，代金券是发放 / 领取式定额抵扣券，两者并存、互不替代；
+- 抵扣金额 = min(券面额, 券后应付金额)，最多抵到 0、不找零；单笔订单只支持一张代金券（优惠券同样限一张）；
+- 券码限定为 ASCII 大小写字母与数字共 8 位（与插件正则的字符集要求一致）；
+- 服务「续费」的前台按钮是直接下单、未加券码输入框（接口已支持 `voucher_code`，其它入口均可在界面填码）；
+- 退款 / 取消订单不返还代金券（插件可见契约中没有返还逻辑；与站内优惠券口径一致）。
 
 验证：`gofmt` / `go build ./...` / `go vet` / `vue-tsc --noEmit`。
