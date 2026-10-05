@@ -306,6 +306,10 @@ func (a *App) afterPaymentCompleted(c *gin.Context, method, outTradeNo string, a
 			log.Printf("referral commission failed for %s: %v", outTradeNo, cerr)
 		}
 	}
+	// 商品返现：支付成功后按商品规则返到买家余额（幂等同订单只返一次）。
+	if _, cerr := a.Store.PayProductCashback(c, outTradeNo); cerr != nil {
+		log.Printf("product cashback failed for %s: %v", outTradeNo, cerr)
+	}
 	if renewServiceID != "" && a.Queue != nil {
 		_ = a.Queue.ServiceRenew(renewServiceID)
 	}

@@ -360,6 +360,12 @@ func (a *App) registerAdminRoutes(g *gin.RouterGroup) {
 	g.POST("/coupons", a.require("coupon.manage"), a.csrf(), a.adminCreateCoupon)
 	g.PUT("/coupons/:id", a.require("coupon.manage"), a.csrf(), a.adminUpdateCoupon)
 	g.DELETE("/coupons/:id", a.require("coupon.manage"), a.csrf(), a.adminDeleteCoupon)
+	// 商品返现（对齐魔方 product_cashback 插件；支付成功后返到余额）
+	g.GET("/product-cashbacks", a.require("product.write"), a.adminListProductCashbacks)
+	g.POST("/product-cashbacks", a.require("product.write"), a.csrf(), a.adminCreateProductCashback)
+	g.PUT("/product-cashbacks/:id", a.require("product.write"), a.csrf(), a.adminUpdateProductCashback)
+	g.PUT("/product-cashbacks/:id/status", a.require("product.write"), a.csrf(), a.adminSetProductCashbackStatus)
+	g.DELETE("/product-cashbacks/:id", a.require("product.write"), a.csrf(), a.adminDeleteProductCashback)
 	g.GET("/user-groups", a.require("agent.manage"), a.adminListUserGroups)
 	g.POST("/user-groups", a.require("agent.manage"), a.csrf(), a.adminCreateUserGroup)
 	g.PUT("/user-groups/:id", a.require("agent.manage"), a.csrf(), a.adminUpdateUserGroup)
