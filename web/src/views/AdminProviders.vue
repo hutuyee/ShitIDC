@@ -60,8 +60,9 @@ const typeOptions = [
   { label: '宝塔面板', value: 'baota' },
   { label: 'NOKVM 虚拟化', value: 'nokvm' },
   { label: 'Kangle 虚拟主机（未来高级版）', value: 'wlkangle' },
+  { label: 'Bthost 虚拟主机（bthosts）', value: 'bthosts' },
 ]
-const isInfra = computed(() => ['proxmox', 'virtualizor', 'baota', 'nokvm', 'wlkangle'].includes(form.value.provider_type))
+const isInfra = computed(() => ['proxmox', 'virtualizor', 'baota', 'nokvm', 'wlkangle', 'bthosts'].includes(form.value.provider_type))
 
 // 基础设施 Provider 的默认配置模板
 const infraTemplates: Record<string, string> = {
@@ -70,6 +71,7 @@ const infraTemplates: Record<string, string> = {
   baota: JSON.stringify({ site_type: 'PHP', php_version: '00', site_path: '/www/wwwroot', db: false, allow_private: false }, null, 2),
   nokvm: JSON.stringify({ allow_private: false }, null, 2),
   wlkangle: JSON.stringify({ allow_private: false }, null, 2),
+  bthosts: JSON.stringify({ allow_private: false }, null, 2),
 }
 function onTypeChange(v: string) {
   if (infraTemplates[v]) form.value.config_json = infraTemplates[v]

@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/hutuyee/ShitIDC/internal/provider"
 	"github.com/hutuyee/ShitIDC/internal/provider/baota"
+	"github.com/hutuyee/ShitIDC/internal/provider/bthosts"
 	"github.com/hutuyee/ShitIDC/internal/provider/custom"
 	"github.com/hutuyee/ShitIDC/internal/provider/magiccube"
 	"github.com/hutuyee/ShitIDC/internal/provider/nokvm"
@@ -91,6 +92,15 @@ func (a *App) resolveProviderClient(ctx context.Context, pv model.Provider, secr
 		cfg.BaseURL = pv.BaseURL
 		cfg.Token = secret
 		return wlkangle.New(cfg)
+	case "bthosts":
+		b, _ := json.Marshal(pv.Config)
+		var cfg bthosts.Config
+		if err := json.Unmarshal(b, &cfg); err != nil {
+			return nil, fmt.Errorf("bthosts config decode: %w", err)
+		}
+		cfg.BaseURL = pv.BaseURL
+		cfg.Token = secret
+		return bthosts.New(cfg)
 	case "custom":
 		// 声明式上游（魔方插件导入产物）：规格在 config.spec，密钥即接口 token。
 		if _, ok := pv.Config["spec"]; !ok {

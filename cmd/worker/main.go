@@ -20,6 +20,7 @@ import (
 	"github.com/hutuyee/ShitIDC/internal/notify"
 	"github.com/hutuyee/ShitIDC/internal/provider"
 	"github.com/hutuyee/ShitIDC/internal/provider/baota"
+	"github.com/hutuyee/ShitIDC/internal/provider/bthosts"
 	"github.com/hutuyee/ShitIDC/internal/provider/custom"
 	"github.com/hutuyee/ShitIDC/internal/provider/magiccube"
 	"github.com/hutuyee/ShitIDC/internal/provider/nokvm"
@@ -95,6 +96,8 @@ func (w *worker) resolve(ctx context.Context, providerID int64, providerType str
 		return w.resolveNokvm(ctx, providerID)
 	case "wlkangle":
 		return w.resolveWlkangle(ctx, providerID)
+	case "bthosts":
+		return w.resolveBthosts(ctx, providerID)
 	case "custom":
 		return w.resolveCustom(ctx, providerID)
 	default:
@@ -595,4 +598,20 @@ func (w *worker) resolveWlkangle(ctx context.Context, providerID int64) (provide
 	cfg.BaseURL = pv.BaseURL
 	cfg.Token = secret
 	return wlkangle.New(cfg)
+}
+
+// resolveBthosts builds the Bthost 虚拟主机客户端: secret = 通讯密钥（accesshash）。
+func (w *worker) resolveBthosts(ctx context.Context, providerID int64) (provider.Provider, error) {
+	pv, secret, err := w.providerSecret(ctx, providerID)
+	if err != nil {
+		return nil, err
+	}
+	b, _ := json.Marshal(pv.Config)
+	var cfg bthosts.Config
+	if err := json.Unmarshal(b, &cfg); err != nil {
+		return nil, fmt.Errorf("bthosts config decode: %w", err)
+	}
+	cfg.BaseURL = pv.BaseURL
+	cfg.Token = secret
+	return bthosts.New(cfg)
 }
