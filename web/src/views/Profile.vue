@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { NButton, NInput, NModal, NTag, useMessage } from 'naive-ui'
+import { NButton, NInput, NModal, NQrCode, NTag, useMessage } from 'naive-ui'
 import { api, dataOf, setCSRF } from '../api'
 import { useAuthStore } from '../stores/auth'
 
@@ -221,6 +221,85 @@ async function unbindPhone() {
   }
 }
 
+// ---- 实名认证（扫码通道走 /certification/poll 轮询）----
+const cert = ref<{ status: string; required: boolean; real_name_masked?: string; id_number_masked?: string; reject_reason?: string; provider?: string }>({ status: 'none', required: false })
+const certFields = ref<{ key: string; label: string; placeholder?: string; required?: boolean }[]>([])
+const certOpen = ref(false)
+const certSaving = ref(false)
+const certPendingURL = ref('')
+const certForm = reactive({ real_name: '', id_number: '', id_type: 'idcard', extra: {} as Record<string, string> })
+const certPollTimer = ref<number | undefined>(undefined)
+
+async function loadCertification() {
+  try {
+    const d = dataOf<any>(await api.get('/certification'))
+    cert.value = d
+    certFields.value = d.fields || []
+    if (d.status === 'pending') startCertPoll()
+  } catch { /* ignore */ }
+}
+
+function startCertPoll() {
+  if (certPollTimer.value) return
+  certPollTimer.value = window.setInterval(pollCertification, 3000)
+}
+
+function stopCertPoll() {
+  if (certPollTimer.value) { clearInterval(certPollTimer.value); certPollTimer.value = undefined }
+}
+async function pollCertification() {
+  try {
+    const d = dataOf<any>(await api.get('/certification/poll'))
+    if (d.status === 'pending') {
+      if (d.url) certPendingURL.value = d.url
+      return
+    }
+    if (d.status === 'none') return
+    stopCertPoll()
+    certPendingURL.value = ''
+    if (d.status === 'approved') message.success('实名认证已通过')
+    else message.warning(d.message || '实名认证未通过')
+    await loadCertification()
+  } catch { /* 网络抖动：下个周期继续 */ }
+}
+
+function openCert() {
+  certForm.real_name = ''
+  certForm.id_number = ''
+  certForm.id_type = 'idcard'
+  certForm.extra = {}
+  certOpen.value = true
+  if (cert.value.status === 'pending' && !certPendingURL.value) pollCertification()
+}
+
+async function submitCert() {
+  if (!certForm.real_name.trim() || !certForm.id_number.trim()) { message.error('请填写姓名与证件号'); return }
+  certSaving.value = true
+  try {
+    const d = dataOf<any>(await api.post('/certification', {
+      real_name: certForm.real_name.trim(),
+      id_number: certForm.id_number.trim().toUpperCase(),
+      id_type: certForm.id_type,
+      extra: certForm.extra,
+    }))
+    if (d.status === 'pending') {
+      cert.value = { ...cert.value, status: 'pending', provider: d.provider }
+      certPendingURL.value = d.url || ''
+      message.info(d.message || '已发起认证，请扫码完成')
+      startCertPoll()
+      return
+    }
+    certOpen.value = false
+    if (d.status === 'approved') message.success('实名认证已通过')
+    else message.info(d.message || '已提交')
+    await loadCertification()
+  } catch (e: any) {
+    message.error(e?.response?.data?.error?.message || '提交失败')
+  } finally {
+    certSaving.value = false
+  }
+}
+
 // ---- 第三方账号绑定 ----
 const oauthIdentities = ref<any[]>([])
 const oauthHasPassword = ref(true)
@@ -253,7 +332,8 @@ function bindOauthStart(provider: string) {
   window.location.href = `/api/v1/auth/oauth/${encodeURIComponent(provider)}/start?redirect_to=${encodeURIComponent('/profile')}`
 }
 
-onMounted(() => { load(); loadSessions(); loadTotp(); loadPhone(); loadOauthIdentities() })
+onMounted(() => { load(); loadSessions(); loadTotp(); loadPhone(); loadOauthIdentities(); loadCertification() })
+onUnmounted(stopCertPoll)
 </script>
 
 <template>
@@ -338,6 +418,21 @@ onMounted(() => { load(); loadSessions(); loadTotp(); loadPhone(); loadOauthIden
           <NButton v-else secondary type="primary" @click="bindPhoneOpen = true; bindPhone = { phone: '', code: '' }">绑定手机号</NButton>
         </div>
 
+        <div class="panel-title-row"><div><h2>实名认证</h2><span>用于合规与账户安全，仅保存掩码与哈希</span></div></div>
+        <div class="stack" style="gap:8px">
+          <div class="row" style="gap:8px;flex-wrap:wrap">
+            <span v-if="cert.status === 'approved'" class="badge green">已通过实名认证</span>
+            <span v-else-if="cert.status === 'pending'" class="badge amber">认证处理中</span>
+            <span v-else-if="cert.status === 'rejected'" class="badge amber">认证未通过</span>
+            <span v-else class="badge amber">未实名认证</span>
+            <NButton v-if="cert.status !== 'approved' && cert.status !== 'pending'" secondary type="primary" size="small" @click="openCert">去实名认证</NButton>
+            <NButton v-else-if="cert.status === 'pending'" size="small" secondary @click="openCert">查看进度</NButton>
+          </div>
+          <div v-if="cert.status === 'approved'" class="muted" style="font-size:12px">{{ cert.real_name_masked }} · {{ cert.id_number_masked }}</div>
+          <div v-if="cert.status === 'rejected' && cert.reject_reason" class="security-note">驳回原因：{{ cert.reject_reason }}</div>
+          <div v-if="cert.required" class="security-note">本站要求完成实名后才能下单。</div>
+        </div>
+
         <div class="panel-title-row"><div><h2>第三方账号</h2><span>绑定后可用第三方账号直接登录</span></div></div>
         <div class="stack" style="gap:6px">
           <div v-for="i in oauthIdentities" :key="i.provider + i.subject" class="mini-row">
@@ -368,6 +463,29 @@ onMounted(() => { load(); loadSessions(); loadTotp(); loadPhone(); loadOauthIden
         </div>
       </section>
     </div>
+
+    <NModal v-model:show="certOpen" preset="card" title="实名认证" style="width:min(480px,94vw)">
+      <div class="stack">
+        <template v-if="cert.status === 'pending'">
+          <p style="margin:0">认证处理中，扫码完成后此页面会自动更新（每 3 秒查询一次）。</p>
+          <template v-if="certPendingURL">
+            <div style="display:flex;justify-content:center"><NQrCode :value="certPendingURL" :size="200" /></div>
+            <p class="muted" style="margin:0;font-size:12px;word-break:break-all">{{ certPendingURL }}</p>
+          </template>
+          <NButton block secondary @click="pollCertification">立即刷新</NButton>
+        </template>
+        <template v-else>
+          <NInput v-model:value="certForm.real_name" placeholder="真实姓名（与证件一致）" />
+          <NInput v-model:value="certForm.id_number" placeholder="身份证号（只保存掩码与哈希）" />
+          <label v-for="f in certFields" :key="f.key" class="stack" style="gap:4px">
+            <span class="muted" style="font-size:12px">{{ f.label }}<template v-if="f.required">（必填）</template></span>
+            <NInput v-model:value="certForm.extra[f.key]" :placeholder="f.placeholder || ''" />
+          </label>
+          <NButton type="primary" block :loading="certSaving" @click="submitCert">提交认证</NButton>
+          <div class="security-note">姓名与证件号仅在提交时使用，落库只存掩码与 HMAC 哈希；扫码通道提交后会显示二维码。</div>
+        </template>
+      </div>
+    </NModal>
 
     <NModal v-model:show="pwOpen" preset="card" title="修改密码" style="width:min(420px,92vw)">
       <div class="stack">

@@ -45,6 +45,38 @@ const CERT_FIELD_SPECS: Record<string, FieldSpec[]> = {
     { key: 'endpoint', label: '核验端点（默认阿里云云市场二要素）', optional: true },
     { key: 'app_code', label: 'AppCode（云市场授权码）', secret: true },
   ],
+  ali: [
+    { key: 'app_id', label: '支付宝 AppID' },
+    { key: 'gateway_url', label: '网关地址（默认 openapi.alipay.com）', optional: true },
+    { key: 'biz_code', label: '认证场景码（默认 SMART_FACE）', optional: true },
+    { key: 'return_url', label: '认证完成后跳回地址', optional: true },
+    { key: 'private_key', label: '应用私钥（PKCS8/PEM）', secret: true, area: true },
+    { key: 'alipay_public_key', label: '支付宝公钥（响应验签）', secret: true, area: true },
+  ],
+  idcsmartali: [
+    { key: 'endpoint', label: '接口地址（默认 api1.idcsmart.com/certapi.php）', optional: true },
+    { key: 'biz_code', label: '业务码（默认 FACE）', optional: true },
+    { key: 'cert_type', label: '认证类型（默认 IDENTITY_CARD）', optional: true },
+    { key: 'return_url', label: '认证完成后跳回地址', optional: true },
+    { key: 'api', label: '魔方签发 api 头', secret: true },
+    { key: 'key', label: '魔方签发 key 头', secret: true },
+  ],
+  threehc: [
+    { key: 'type', label: '要素类型：2=二要素 / 3=三要素 / 4=四要素（默认 3）', optional: true },
+    { key: 'endpoint', label: '接口地址（默认 api11.aliyun.venuscn.com）', optional: true },
+    { key: 'app_code', label: 'AppCode（云市场授权码）', secret: true },
+  ],
+  phonethree: [
+    { key: 'endpoint', label: '接口地址（默认 phone3.market.alicloudapi.com）', optional: true },
+    { key: 'app_code', label: 'AppCode（云市场授权码）', secret: true },
+  ],
+  wechat: [
+    { key: 'rule_id', label: '人脸核身 RuleID（数字）' },
+    { key: 'endpoint', label: '接口域名（默认 faceid.tencentcloudapi.com）', optional: true },
+    { key: 'return_url', label: '认证完成后跳回地址', optional: true },
+    { key: 'secret_id', label: '腾讯云 SecretId', secret: true },
+    { key: 'secret_key', label: '腾讯云 SecretKey', secret: true },
+  ],
 }
 const certProviders = ref<any[]>([])
 const certAvailable = ref<string[]>([])
@@ -53,6 +85,9 @@ certForm.values = {}
 const certSaving = ref(false)
 const certChannelLabels: Record<string, string> = {
   manual: '人工审核', alitwo: '阿里云身份证二要素',
+  ali: '支付宝芝麻认证', idcsmartali: '智简魔方芝麻信用',
+  threehc: '银行卡要素核验（二/三/四要素）', phonethree: '手机号要素核验',
+  wechat: '腾讯云人脸核身（微信）',
 }
 const certFieldSpecs = () => CERT_FIELD_SPECS[certForm.provider] || []
 function pickCertProvider(p: string) {
@@ -765,7 +800,8 @@ onMounted(load)
           <div v-if="certFieldSpecs().length" class="form-grid">
             <label v-for="spec in certFieldSpecs()" :key="spec.key" :class="{ full: spec.area }">
               <span>{{ spec.label }}<template v-if="spec.secret">（凭据）</template><template v-if="spec.optional">（可选）</template></span>
-              <NInput v-if="spec.secret" v-model:value="certForm.values[spec.key]" type="password" show-password-on="click" />
+              <NInput v-if="spec.area" v-model:value="certForm.values[spec.key]" type="textarea" :rows="3" />
+              <NInput v-else-if="spec.secret" v-model:value="certForm.values[spec.key]" type="password" show-password-on="click" />
               <NInput v-else v-model:value="certForm.values[spec.key]" />
             </label>
           </div>

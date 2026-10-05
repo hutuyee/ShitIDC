@@ -11,6 +11,7 @@ const services = ref<any[]>([])
 const tickets = ref<any[]>([])
 const transactions = ref<any[]>([])
 const announcements = ref<any[]>([])
+const cert = ref<{ status: string }>({ status: 'none' })
 const loaded = ref(false)
 
 async function safeGet(path: string, fallback: any) {
@@ -18,17 +19,19 @@ async function safeGet(path: string, fallback: any) {
 }
 
 onMounted(async () => {
-  const [w, o, i, s, t, tx, ann] = await Promise.all([
+  const [w, o, i, s, t, tx, ann, ce] = await Promise.all([
     safeGet('/wallet', { balance_cents: 0, currency: 'CNY' }),
     safeGet('/orders', []),
     safeGet('/invoices', []),
     safeGet('/services', []),
     safeGet('/tickets', []),
     safeGet('/wallet/transactions', []),
-    safeGet('/announcements', [])
+    safeGet('/announcements', []),
+    safeGet('/certification', { status: 'none' })
   ])
   wallet.value = w; orders.value = o; invoices.value = i; services.value = s; tickets.value = t; transactions.value = tx
   announcements.value = ann.slice(0, 5)
+  cert.value = ce
   loaded.value = true
 })
 
@@ -136,7 +139,7 @@ const chartPoints = computed(() => {
       <aside class="dashboard-side">
         <div class="panel account-panel">
           <div class="profile-head"><span class="profile-avatar">{{ userInitial }}</span><div><h3>{{ nickname }}</h3><p>ID: {{ displayUserID }}</p></div><router-link to="/tokens">账户中心</router-link></div>
-          <div class="profile-badges"><span class="badge amber">待实名认证</span><span class="badge green">已绑定邮箱</span></div>
+          <div class="profile-badges"><span class="badge" :class="cert.status === 'approved' ? 'green' : 'amber'">{{ cert.status === 'approved' ? '已通过实名认证' : (cert.status === 'pending' ? '实名认证处理中' : '待实名认证') }}</span><span class="badge green">已绑定邮箱</span></div>
           <div class="account-kpis">
             <div><span>待支付账单</span><strong>{{ unpaidInvoices.length }}</strong></div>
             <div><span>30天内到期资源</span><strong>{{ expiringServices.length }}</strong></div>
