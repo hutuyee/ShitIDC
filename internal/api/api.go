@@ -393,6 +393,16 @@ func (a *App) registerAdminRoutes(g *gin.RouterGroup) {
 	g.PUT("/promotions/:id", a.require("promotion.manage"), a.csrf(), a.adminUpdatePromotion)
 	g.DELETE("/promotions/:id", a.require("promotion.manage"), a.csrf(), a.adminDeletePromotion)
 	g.PUT("/promotions/:id/status", a.require("promotion.manage"), a.csrf(), a.adminSetPromotionStatus)
+	// 周期人工订单（对齐魔方 CycleArtificialOrder 插件；调度器定时为用户生成人工订单）
+	g.GET("/cycle-artificial-orders", a.require("cycle_order.manage"), a.adminListCycleArtificialOrders)
+	g.POST("/cycle-artificial-orders", a.require("cycle_order.manage"), a.csrf(), a.adminCreateCycleArtificialOrder)
+	g.POST("/cycle-artificial-orders/batch-delete", a.require("cycle_order.manage"), a.csrf(), a.adminBatchDeleteArtificialOrders)
+	g.GET("/cycle-artificial-orders/:id", a.require("cycle_order.manage"), a.adminGetCycleArtificialOrder)
+	g.PUT("/cycle-artificial-orders/:id", a.require("cycle_order.manage"), a.csrf(), a.adminUpdateCycleArtificialOrder)
+	g.DELETE("/cycle-artificial-orders/:id", a.require("cycle_order.manage"), a.csrf(), a.adminDeleteCycleArtificialOrder)
+	g.PUT("/artificial-orders/:id/price", a.require("cycle_order.manage"), a.csrf(), a.adminAdjustArtificialOrder)
+	g.POST("/artificial-orders/:id/mark-paid", a.require("cycle_order.manage"), a.csrf(), a.adminMarkArtificialOrderPaid)
+	g.DELETE("/artificial-orders/:id", a.require("cycle_order.manage"), a.csrf(), a.adminDeleteArtificialOrder)
 	// 商品返现（对齐魔方 product_cashback 插件；支付成功后返到余额）
 	g.GET("/product-cashbacks", a.require("product.write"), a.adminListProductCashbacks)
 	g.POST("/product-cashbacks", a.require("product.write"), a.csrf(), a.adminCreateProductCashback)
