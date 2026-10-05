@@ -65,6 +65,12 @@ var ErrCartCurrencyMismatch = errors.New("购物车只支持一种币种，请�
 
 // AddCartItem 把商品加入购物车（同商品同周期同币种覆盖数量与配置）。
 func (s *Store) AddCartItem(ctx context.Context, userID int64, productPublicID, billingCycle string, quantity int, cfgIn OrderConfigInput) (CartItem, error) {
+	return s.AddCartItemWithCurrency(ctx, userID, productPublicID, billingCycle, "", quantity, cfgIn)
+}
+
+// AddCartItemWithCurrency 与 AddCartItem 相同，但由调用方指定币种：多币种商品从产品页
+// 加购时保持用户选中的那一种；currency 为空时回退为「该商品该周期下排序第一个可用币种」。
+func (s *Store) AddCartItemWithCurrency(ctx context.Context, userID int64, productPublicID, billingCycle, currency string, quantity int, cfgIn OrderConfigInput) (CartItem, error) {
 	if quantity < 1 || quantity > 100 {
 		return CartItem{}, fmt.Errorf("数量必须在 1 到 100 之间")
 	}
@@ -90,17 +96,24 @@ func (s *Store) AddCartItem(ctx context.Context, userID int64, productPublicID, 
 		return CartItem{}, err
 	}
 	var productID int64
-	var currency string
 	if err := s.DB.QueryRow(ctx, `SELECT id FROM products WHERE public_id=$1 AND active=true AND deleted_at IS NULL`, productPublicID).Scan(&productID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return CartItem{}, ErrNotFound
 		}
 		return CartItem{}, err
 	}
-	if err := s.DB.QueryRow(ctx, `SELECT currency FROM product_prices WHERE product_id=$1 AND billing_cycle=$2 AND active=true ORDER BY currency LIMIT 1`,
-		productID, strings.ToLower(strings.TrimSpace(billingCycle))).Scan(&currency); err != nil {
+	if strings.TrimSpace(currency) == "" {
+		if err := s.DB.QueryRow(ctx, `SELECT currency FROM product_prices WHERE product_id=$1 AND billing_cycle=$2 AND active=true ORDER BY currency LIMIT 1`,
+			productID, strings.ToLower(strings.TrimSpace(billingCycle))).Scan(&currency); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return CartItem{}, fmt.Errorf("该商品在此周期下没有价格")
+			}
+			return CartItem{}, err
+		}
+	} else if err := s.DB.QueryRow(ctx, `SELECT currency FROM product_prices WHERE product_id=$1 AND billing_cycle=$2 AND active=true AND upper(currency)=upper($3) LIMIT 1`,
+		productID, strings.ToLower(strings.TrimSpace(billingCycle)), strings.TrimSpace(currency)).Scan(&currency); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return CartItem{}, fmt.Errorf("该商品在此周期下没有价格")
+			return CartItem{}, fmt.Errorf("该商品在此周期与币种下没有价格")
 		}
 		return CartItem{}, err
 	}

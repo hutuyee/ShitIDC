@@ -30,6 +30,7 @@ func (a *App) addCartItem(c *gin.Context) {
 	var in struct {
 		ProductID    string               `json:"product_id"`
 		BillingCycle string               `json:"billing_cycle"`
+		Currency     string               `json:"currency"`
 		Quantity     int                  `json:"quantity"`
 		Config       []store.ConfigChoice `json:"config"`
 		CustomFields map[string]string    `json:"custom_fields"`
@@ -48,7 +49,7 @@ func (a *App) addCartItem(c *gin.Context) {
 	if in.BillingCycle == "" {
 		in.BillingCycle = "monthly"
 	}
-	if _, err := a.Store.AddCartItem(c, pr.User.ID, in.ProductID, in.BillingCycle, in.Quantity, store.OrderConfigInput{
+	if _, err := a.Store.AddCartItemWithCurrency(c, pr.User.ID, in.ProductID, in.BillingCycle, in.Currency, in.Quantity, store.OrderConfigInput{
 		Choices: in.Config, CustomFields: in.CustomFields,
 	}); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
