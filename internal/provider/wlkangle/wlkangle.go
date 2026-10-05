@@ -8,6 +8,8 @@
 //	动作  info（连通测试）/ add_vh（开通，init=1）/ add_vh&edit=1（改配）/
 //	     update_vh&status=1|0（暂停/恢复）/ del_vh（删除）/ change_password。
 //	续费  参考实现的 _Renew 就是解除暂停——到期暂停的服务续费后立即恢复。
+//	兼容  kanghostx（CBAP sub_server 的 V10 模块）：面板 API 相同，配置键位是
+//	     way + parameter1..16（自定义）/ kl_*（弹性），带宽按 M×128 换算。
 package wlkangle
 
 import (
@@ -21,6 +23,7 @@ import (
 	"math/rand"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -182,23 +185,18 @@ func randIntN(n int) int {
 	return pwRand.Intn(n)
 }
 
-// createForm 从配置项拼 add_vh 的参数（键名与 wlkanglepro_ConfigOptions 一致：
-// web_quota / db_quota / flow_limit / cdn ...）。product_id 开通方式只带 ID。
+// createForm 从配置项拼 add_vh 的参数，两套键位都支持：
+// wlkanglepro（type / web_quota / db_quota / flow_limit / cdn ...，product_id 方式只带 ID）
+// 与 kanghostx（way / parameter1..16 / kl_*，见 kanghostxForm）。
 func createForm(req provider.CreateRequest, name, password string) url.Values {
 	cfg := map[string]any{}
 	if m, ok := req.Options["configoptions"].(map[string]any); ok {
 		cfg = m
 	}
-	get := func(k string) string {
-		v, ok := cfg[k]
-		if !ok || v == nil {
-			return ""
-		}
-		if s, ok := v.(string); ok {
-			return strings.TrimSpace(s)
-		}
-		return fmt.Sprint(v)
+	if isKanghostxConfig(cfg) {
+		return kanghostxForm(cfg, name, password)
 	}
+	get := func(k string) string { return configString(cfg, k) }
 	form := url.Values{
 		"c":      {"whm"},
 		"init":   {"1"},
@@ -223,6 +221,106 @@ func createForm(req provider.CreateRequest, name, password string) url.Values {
 		form.Set("domain", dom)
 	}
 	return form
+}
+
+// isKanghostxConfig 判断配置键是否来自 kanghostx（CBAP sub_server 的 V10 模块）：
+// 它用 way 切换开通方式，资源参数名为 parameter1..parameter16（自定义）
+// 或 kl_*（弹性），与 wlkanglepro 的 type / web_quota 体系不重叠。
+func isKanghostxConfig(cfg map[string]any) bool {
+	if _, ok := cfg["way"]; ok {
+		return true
+	}
+	for k := range cfg {
+		if strings.HasPrefix(k, "parameter") || strings.HasPrefix(k, "kl_") {
+			return true
+		}
+	}
+	return false
+}
+
+// configString 读一个配置值并转成字符串（等价参考实现的 $params['configoptions'][key]）。
+func configString(cfg map[string]any, key string) string {
+	v, ok := cfg[key]
+	if !ok || v == nil {
+		return ""
+	}
+	if s, ok := v.(string); ok {
+		return strings.TrimSpace(s)
+	}
+	return fmt.Sprint(v)
+}
+
+// kanghostxForm 复刻 kanghostx_CreateAccount / _ChangePackage 的拼参逻辑：
+// way=0 自定义（parameterN）、way=1 弹性（kl_*）；空值不下发（对齐 PHP 的
+// isset && !empty）。带宽字段单位是 M、面板要 KB，按 PHP 的 $v * 128 换算。
+//
+// 与参考实现的一处差异（有意）：_ChangePackage 不区分 way、固定读 kl_*，
+// 这里跟随 way 读对应键位，避免自定义产品升降级时丢参数。
+func kanghostxForm(cfg map[string]any, name, password string) url.Values {
+	form := url.Values{
+		"c":       {"whm"},
+		"init":    {"1"},
+		"name":    {name},
+		"passwd":  {password},
+		"module":  {"php"},
+		"db_type": {"mysql"},
+	}
+	// 空字符串不下发；「0」按配置项语义原样下发。
+	set := func(key, value string) {
+		if value != "" {
+			form.Set(key, value)
+		}
+	}
+	// 两种开通方式共用的固定键：parameter1/2/5/16 与 ftp。
+	set("cdn", configString(cfg, "parameter1"))
+	set("subdir_flag", configString(cfg, "parameter2"))
+	set("subdir", configString(cfg, "parameter5"))
+	set("ftp", configString(cfg, "ftp"))
+	set("port", configString(cfg, "parameter16"))
+	way := configString(cfg, "way")
+	if way == "1" || strings.EqualFold(way, "true") || way == "是" {
+		// 弹性配置：资源参数由用户下单时选择（kl_* 键）。
+		set("web_quota", configString(cfg, "kl_site"))
+		set("db_quota", configString(cfg, "kl_sql"))
+		set("domain", configString(cfg, "kl_domain"))
+		set("max_subdir", configString(cfg, "kl_zi"))
+		set("flow_limit", configString(cfg, "kl_flow"))
+		set("speed_limit", speedLimitKb(configString(cfg, "kl_speed")))
+		set("max_connect", configString(cfg, "kl_connect"))
+		set("access", configString(cfg, "kl_access"))
+		set("htaccess", configString(cfg, "kl_htaccess"))
+		set("log_file", configString(cfg, "kl_log_file"))
+		set("log_handle", configString(cfg, "kl_log_handle"))
+		set("ssi", configString(cfg, "kl_ssi"))
+		return form
+	}
+	// 自定义配置（way=0）：parameterN 键位。
+	set("domain", configString(cfg, "parameter3"))
+	set("max_subdir", configString(cfg, "parameter4"))
+	set("web_quota", configString(cfg, "parameter6"))
+	set("db_quota", configString(cfg, "parameter7"))
+	set("flow_limit", configString(cfg, "parameter8"))
+	set("speed_limit", speedLimitKb(configString(cfg, "parameter9")))
+	set("max_connect", configString(cfg, "parameter10"))
+	set("access", configString(cfg, "parameter11"))
+	set("log_file", configString(cfg, "parameter12"))
+	set("log_handle", configString(cfg, "parameter13"))
+	set("ssi", configString(cfg, "parameter14"))
+	set("htaccess", configString(cfg, "parameter15"))
+	return form
+}
+
+// speedLimitKb 把 kanghostx 的带宽值（M）换算成面板要的 KB 数（×128，
+// 对应 PHP 的 $v * 128）；非数字原样返回。
+func speedLimitKb(value string) string {
+	if value == "" {
+		return ""
+	}
+	n, err := strconv.Atoi(value)
+	if err != nil {
+		return value
+	}
+	return strconv.Itoa(n * 128)
 }
 
 // Create 开通一个虚拟主机（kangle 的 add_vh）。
