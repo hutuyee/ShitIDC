@@ -17,6 +17,7 @@ const buyPrices = ref<any[]>([])
 const buyCycle = ref('')
 const buyQty = ref(1)
 const buying = ref(false)
+const addingToCart = ref(false)
 const couponCode = ref('')
 const couponDiscount = ref(0)
 const couponChecking = ref(false)
@@ -105,6 +106,23 @@ async function confirmBuy() {
     buyOpen.value = false
     router.push('/orders')
   } catch (e: any) { message.error(e?.response?.data?.error?.message || '下单失败') } finally { buying.value = false }
+}
+
+// 加入购物车：与「创建订单」共用同一份配置与自定义字段，价格结算时仍会重算。
+async function addToCart() {
+  if (!buyProduct.value) return
+  addingToCart.value = true
+  try {
+    const cfg = buildConfigPayload()
+    await api.post('/cart/items', {
+      product_id: buyProduct.value.id, billing_cycle: buyCycle.value, quantity: buyQty.value,
+      currency: buyCurrency.value || undefined,
+      config: cfg.config, custom_fields: cfg.custom_fields,
+    })
+    message.success('已加入购物车')
+    buyOpen.value = false
+    router.push('/cart')
+  } catch (e: any) { message.error(e?.response?.data?.error?.message || '加入购物车失败') } finally { addingToCart.value = false }
 }
 
 const money = (cents: number, currency = 'CNY') => `${currency === 'CNY' ? '¥' : currency + ' '}${(Number(cents || 0) / 100).toFixed(2)}`
@@ -331,7 +349,10 @@ onMounted(load)
           <small v-if="couponMsg" :style="{ color: couponDiscount > 0 ? '#1d9e64' : '#cf3030' }">{{ couponMsg }}</small>
         </div>
         <div class="buy-total"><span>合计（下单时后端按最新价格重算）</span><strong>{{ money(buyTotalAfterCoupon, buyPrices.find(x => x.billing_cycle === buyCycle)?.currency || buyProduct.currency) }}</strong></div>
-        <NButton block type="primary" size="large" :loading="buying" @click="confirmBuy">创建订单</NButton>
+        <div class="row" style="gap:10px">
+          <NButton secondary size="large" style="flex:1" :loading="addingToCart" @click="addToCart">加入购物车</NButton>
+          <NButton type="primary" size="large" style="flex:1" :loading="buying" @click="confirmBuy">创建订单</NButton>
+        </div>
       </div>
     </NModal>
   </div>

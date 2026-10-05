@@ -6,6 +6,7 @@ import AnnouncementDetail from './views/AnnouncementDetail.vue'
 import Products from './views/Products.vue'
 import Orders from './views/Orders.vue'
 import Invoices from './views/Invoices.vue'
+import Cart from './views/Cart.vue'
 import Wallet from './views/Wallet.vue'
 import Services from './views/Services.vue'
 import Tickets from './views/Tickets.vue'
@@ -40,6 +41,7 @@ const router = createRouter({ history: createWebHistory(), routes: [
   { path: '/login', component: Login, meta: { public: true } },
   { path: '/', component: Dashboard },
   { path: '/products', component: Products },
+  { path: '/cart', component: Cart },
   { path: '/announcements', component: Announcements },
   { path: '/announcements/:id', component: AnnouncementDetail },
   { path: '/orders', component: Orders },

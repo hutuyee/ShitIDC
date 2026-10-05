@@ -68,6 +68,7 @@ function toggleTheme() {
               <nav class="topnav" aria-label="用户中心导航">
                 <router-link to="/">总览</router-link>
                 <router-link to="/products">产品</router-link>
+                <router-link to="/cart">购物车</router-link>
                 <router-link to="/orders">订单</router-link>
                 <router-link to="/wallet">财务</router-link>
                 <router-link to="/services">服务</router-link>
@@ -76,7 +77,7 @@ function toggleTheme() {
                 <router-link to="/profile">账户</router-link>
               </nav>
               <div class="topbar-actions">
-                <router-link to="/orders" class="icon-button" title="订单">🛒</router-link>
+                <router-link to="/cart" class="icon-button" title="购物车">🛒</router-link>
                 <router-link to="/tickets" class="icon-button" title="工单">🔔</router-link>
                 <button class="icon-button plain-button" title="切换主题" @click="toggleTheme">◐</button>
                 <router-link v-if="isAdmin" :to="ADMIN_PATH" class="admin-entry">管理后台</router-link>
