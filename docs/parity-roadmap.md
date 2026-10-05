@@ -796,3 +796,14 @@ AppSecretKey）进加密凭据，其余进普通配置。
 
 两个通道复用既有基础设施（云市场错误翻译 / internal/tc3），后台「实名核验通道」面板按通道渲染对应字段。至此魔方参考源 certification 类目里协议可读的插件（alitwo / ali / idcsmartali / wechat / threehc / phonethree / fuplusx / yerzt）全部在 ShitIDC 有对应的 Go 实现。
 
+### 10.7 支付网关补齐：支付宝国际支付（global_alipay）与 Stripe 加固（本轮补齐）
+
+CBAP 包 gateway 目录的明文插件此前大多已对齐，本轮清掉最后两个：
+
+| 通道 | 协议 | 关键点 |
+|---|---|---|
+| global_alipay 支付宝国际支付（境外收单） | GET https://intlmapi.alipay.com/gateway.do，service=create_forex_trade（wap 用 create_forex_trade_wap），MD5 签名 | 参数去掉 sign/sign_type/空值后按名排序拼 k=v&k=v 再直接拼密钥；total_fee = 金额 × rate（bcmul 截断到分），回调按 total_fee ÷ rate 还原（本实现四舍五入，避免 bcdiv 截断的 ±1 分漂移）；trade_information={"business_type":5,...} 标记服务费类交易；「服务费」文案按插件替换为 " Service Fee"；差异：回调增加 trade_status ∈ {TRADE_SUCCESS, TRADE_FINISHED} 校验（插件只验签名，WAIT_BUYER_PAY 也会被当成成功） |
+| stripe Stripe 加固 | Checkout Session + webhook | 按参考插件 stripe 的判据补 payment_status=="paid" 校验：checkout.session.completed 在异步支付方式下可能带 unpaid，只认 paid；签名/事件类型/时间窗/Refund 等既有逻辑不变 |
+
+凭据形态：global_alipay 的 Secret 为 JSON {"key","currency","rate"}（currency 默认 HKD，rate 默认 1，rate = 收取货币/系统货币），也接受纯密钥字符串；后台「支付渠道」面板已加中文标签。
+

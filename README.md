@@ -53,7 +53,7 @@
 - **优惠系统**：fixed/percent 优惠券，事务内原子核销（全局总量、每人限用、最低消费、商品范围、有效期），下单弹窗验证并显示优惠
 - **推广系统**：注册绑定邀请码、`/referral` 页生成专属链接，订单支付后自动按比例返佣入余额（数据库幂等键防重复结算），比例后台可调
 - **代理系统**：用户组整体折扣（先组折扣、后优惠码），代理分组管理页一键分配用户
-- **更多支付**：支付注册表新增 **Stripe**（Checkout Session + webhook 签名验证 + Refund API）、**支付宝官方**（RSA2 + 异步验签 + 自动退款）、**微信支付 APIv3**、**PayPal**、**USDT（Epusdt）**、**虎皮椒**（MD5，响应验签修正参考实现的恒真笔误）、**GoAllPay**（AllPay v5 SHA256，一个实现覆盖支付宝/微信/银联）、**OCGC 酷云**（RSA 双向验签的两步会话式下单），均通过纯标准库实现并附带签名自洽测试
+- **更多支付**：支付注册表新增 **Stripe**（Checkout Session + webhook 签名验证（校验 payment_status=paid）+ Refund API）、**支付宝官方**（RSA2 + 异步验签 + 自动退款）、**微信支付 APIv3**、**PayPal**、**USDT（Epusdt）**、**虎皮椒**（MD5，响应验签修正参考实现的恒真笔误）、**GoAllPay**（AllPay v5 SHA256，一个实现覆盖支付宝/微信/银联）、**OCGC 酷云**（RSA 双向验签的两步会话式下单）、**支付宝国际支付**（境外收单 create_forex_trade，MD5 签名 + 汇率换算结算），均通过纯标准库实现并附带签名自洽测试
 - **自动退款**：管理端退款入口统一分发——钱包支付走冲正交易，Stripe/支付宝订单自动调用网关退款 API 原路退回
 - **更多 Provider**：新增 **Proxmox VE**（API Token 认证，LXC/QEMU 克隆开通、暂停/恢复/删除）、**Virtualizor**（HMAC 签名管理 API）、**NOKVM 虚拟化**（值排序 MD5 签名，开通/暂停/改配）与 **kangle 虚拟主机**（`md5(a+token+r)` 签名，续费=解除暂停）供应商，worker 自动分发
 - **WASM 扩展系统（Extension SDK）**：wazero 宿主 + 能力权限 ABI v1（log / storage / http，逐条强制授权），扩展包 zip 上传、启停、日志查看；参考扩展 `extensions/demo-logger`（Go wasip1 `//go:wasmexport` 实现）+ `scripts/build-extension.sh`，宿主测试真实加载并分发事件
