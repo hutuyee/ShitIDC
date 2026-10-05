@@ -964,7 +964,7 @@ CBAP 仓库 `plugins/addon/` 下 30 个 zip 经逐个检查：**包内全部 `.p
 |---|---|---|
 | AbnormalInspectionRecords | 异常记录：关联产品、标签、导出 | 已对齐（§10.18） |
 | ClientCare | 客户关怀：邮件/站内信、周期推送、指定用户 | 未落地 |
-| ClientCustomField | 客户自定义字段（管理列表/申请） | 未落地（站内仅有商品自定义字段） |
+| ClientCustomField | 客户自定义字段（管理列表/申请） | 已对齐（§10.19） |
 | CostPay | 支出记录：来源/主体/金额/日期 | 已对齐（§10.17） |
 | CreditLimit | 授信：消费记录、混合支付 | 已对齐（授信账户 + 后台授信管理） |
 | CycleArtificialOrder | 人工订单：调价、批量、子项调价 | 未落地 |
@@ -1064,5 +1064,29 @@ CBAP 包 `addon/AbnormalInspectionRecords.zip` 的 PHP（含 config/lang/route�
 - 记录关联的是「用户 + 其名下的服务（产品）」，服务必须属于所选用户；订单 ID 与购买时间由服务对应订单实时派生，不冗余落库（插件为冗余存储，资料会过期）；
 - 站点用户资料无「国家码」分列，`phone_code` 固定返回空串，页面直接展示 `phone`；
 - 截图删除记录时不删文件（与插件一致，保留回溯材料）；`img` 入参同时兼容插件的 `["文件名"]` 与本站 `[{stored,name}]` 两种形状。
+
+验证：`gofmt` / `go build ./...` / `go vet` / `vue-tsc --noEmit`。
+
+### 10.19 ClientCustomField 插件（客户自定义字段）（本轮补齐）
+
+CBAP 包 `addon/ClientCustomField.zip` 的 PHP（controller/model/validate/route）全部 ionCube 加密，前端 `template/admin/api/index.js`、`js/index.js`、`lang/zh-cn.js` 可读，接口与字段面取自这些文件。
+
+| 维度 | 参考实现（插件前端契约） | ShitIDC 落地 |
+|---|---|---|
+| 字段定义 | name、type（text/dropdown/link/password/tickbox/textarea/dropdown_text）、options（英文半角逗号分隔）、description、regexpr、admin_only、required、before_settle、show_register、status、拖拽排序 | `client_custom_fields` 表（033 迁移）同名字段；`client_custom_field_values` 存用户值（field_id+user_id 唯一） |
+| 后台接口 | GET/POST /client_custom_field、PUT /{id}、PUT /{id}/status、DELETE /{id}、PUT /{id}/drag（prev_id，0=最前） | `/admin/client-custom-fields` 同名语义（user.read 读 / user.manage 写 + CSRF + 审计） |
+| 用户值接口 | GET /client/{id}/client_custom_field_value（管理员看某用户的字段与值） | `GET /admin/users/:id/custom-fields`（含管理员专用字段及 has_value） |
+| 用户侧 | clientarea 控制器（加密）：个人中心填写、注册时显示的可提交 | `GET/PUT /profile/custom-fields`（password 不回显、留空=不修改）、`GET /auth/register-fields`（公开只读，注册页动态渲染）、注册接口接受 custom_fields |
+| 门禁 | required / before_settle（订购前必填） | 服务端强制校验（必填 / 下拉选项 / 正则 / 长度）：保存与注册均校验；checkout 缺 before_settle 字段返回 409 CUSTOM_FIELD_REQUIRED |
+| 排序 | 前端拖动 + prev_id | 同一 `/drag` 语义，服务端整表重排权重；页面提供上移 / 下移按钮 |
+| 后台页面 | 插件自带管理页（keywords 搜索 + 分页） | `/admin/client-fields`：列表（类型 / 描述 / 可见位置 / 订购前必填 / 显示状态）、新增 / 编辑（类型不可改）、状态开关、删除确认（有数据显示条数） |
+
+口径说明（加密代码无法比对，按可见契约的最保守解释）：
+
+- 类型共 7 种与插件一致；tickbox 与插件前端一致不提供「必填 / 订购前必填」；
+- 删除字段连带删除字段值（插件提示「当前字段可能存在数据,是否确认删除?」，页面按 value_count 提示条数）；
+- password 读取只回传 has_value（是否已设置），保存空值保持原值；其余类型未提供的字段视为清空；
+- 管理员专用字段不参与用户自助填写与注册，也不在 checkout 门禁范围内；
+- 插件后台列表支持 keywords / 分页，本站字段数量少，一次全量返回（表格不做分页）。
 
 验证：`gofmt` / `go build ./...` / `go vet` / `vue-tsc --noEmit`。
