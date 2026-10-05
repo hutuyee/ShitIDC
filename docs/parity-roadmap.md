@@ -971,7 +971,7 @@ CBAP 仓库 `plugins/addon/` 下 30 个 zip 经逐个检查：**包内全部 `.p
 | EContract | 电子合同：模板/签署/邮寄 | 未落地（§10.13 已声明跳过） |
 | EmailNoticeAdmin | 管理员邮件通知：接口+模板+收件人 | 已对齐（§10.25） |
 | EventPromotion | 促销：满减/百分比、时间窗 | 已对齐（§10.22） |
-| FlowPacket | 流量包管理 | 未落地 |
+| FlowPacket | 流量包管理 | 已对齐（§10.27） |
 | HostTransfer | 主机转移 | 已对齐（§10.26） |
 | IdcsmartClientLevel | 客户等级：三级、商品可选、批量保存 | 已对齐（客户组差异定价，口径等价） |
 | IdcsmartDomain | 域名 | 跳过（§9.4） |
@@ -995,7 +995,7 @@ CBAP 仓库 `plugins/addon/` 下 30 个 zip 经逐个检查：**包内全部 `.p
 
 主程序包 `zjmf-finance/public/plugins/addons/` 的 5 个（demo_style 示例、expired_ip_log / export_excel 已对齐见 §10.8、expired_auto_delete_bill 与 product_divert 主类 ionCube 加密）本轮复核无变化。
 
-说明：未落地项的共同原因是「服务端加密 + 无对外契约」；其中多数（FlowPacket、EventPromotion、Product* 限制系列、HostTransfer）站内已有可复用的骨架（商品/订单/结算/事件），后续可逐个按其前端资产可见的字段面直接设计实现，无需参考加密代码。
+说明：未落地项的共同原因是「服务端加密 + 无对外契约」；其中多数（ClientCare、IdcsmartRecommend、ManualResource 等）站内已有可复用的骨架（商品 / 服务 / 通知 / 事件），后续可逐个按其前端资产可见的字段面直接设计实现，无需参考加密代码。
 
 验证：本轮纯审计与文档，无代码改动。
 
@@ -1254,6 +1254,24 @@ CBAP 包 `addon/HostTransfer.zip` 主类加密，前端资产可读：后台页�
 | 后台页面 | 插件自带记录页 | /admin/service-transfers「产品转移」页：关键词查询 + 刷新；页面提示发起位置 |
 
 说明：商品标识取 products.provider_product_ref（本站没有独立的商品 code 列）；目标用户按 UID / UUID / 邮箱解析；同一产品多次转移会分别留记录。
+
+验证：`gofmt` / `go build ./...` / `go vet ./...` 与 `npx vue-tsc --noEmit` 全部通过。
+
+### 10.27 FlowPacket 插件（流量包）（本轮补齐）
+
+CBAP 包 `addon/FlowPacket.zip` 主类加密，前端资产可读：后台两个页签「流量包订单」（列：ID / 用户 / 流量包 / 关联产品 / 下单时间 / 下单金额 / 支付状态，状态为 未付款 / 已付款 / 已取消 / 已退款，行操作查看订单 / 删除，关键词匹配流量包名 / 产品名 / 用户）与「流量包管理」（列：ID / 名称 / 流量GB / 售价 / 关联商品 / 开关 / 库存 / 备注；新增表单字段：名称、流量（G）、售价、可用库存 + 库存开关、关联商品（多选，必填）、备注）；接口 `GET|POST /flow_packet`、`PUT|DELETE /flow_packet/{id}`、`PUT /flow_packet/{id}/status`、`GET /flow_packet_order`、`DELETE /flow_packet_order/{id}`、`GET /module/product`（module=mf_cloud/mf_dcim）。本轮按该契约落地「流量包」：
+
+| 维度 | 参考实现 | ShitIDC 落地 |
+|---|---|---|
+| 流量包字段 | 名称 / 流量GB / 售价 / 可用库存+开关 / 关联商品 / 备注 / 开关 | flow_packets 表（042 迁移）：name、capacity_gb、price_cents、stock、stock_enable、notes、active |
+| 关联商品 | 多选商品（mf_cloud / mf_dcim） | flow_packet_products 多对多表（存商品公开 ID）；新增 / 编辑至少选择一个商品 |
+| 后台接口 | /flow_packet 五件套 + /flow_packet_order | GET/POST /admin/flow-packets、PUT/DELETE /admin/flow-packets/:id、PUT /admin/flow-packets/:id/status、GET /admin/flow-packet-orders、DELETE /admin/flow-packet-orders/:id（flow_packet.manage 权限 + CSRF + 审计；列表支持关键词与状态过滤） |
+| 后台页面 | 两个页签 | /admin/flow-packets「流量包」页：流量包订单（关键词 / 支付状态查询、删除）与流量包管理（新增 / 编辑 / 启停 / 删除，编辑时关联商品整体替换） |
+| 订单字段 | 用户 / 流量包 / 关联产品 / 下单金额 / 支付状态 / 下单时间 | flow_packet_orders 表：user_id、packet_id + packet_name/capacity_gb 快照、service_id + service_name 快照、amount_cents、status、created_at/paid_at |
+| 用户端 | clientarea/IndexController（PHP 加密不可读） | 「流量包」页：列出上架流量包与每个包适用的名下产品（生效中 / 暂停中 / 已暂停），下单后用余额支付；余额不足保留未付款订单，可在页内支付或取消 |
+| 流量到账 | 插件把流量加到产品上 | 本站服务是接口无关资源，付款后广播 service.updated（kind=flow_packet_paid）并留订单记录，实际到账依赖上游能力 / 人工处理 |
+
+说明：插件订单状态为 Unpaid/Paid/Cancelled/Refunded，本站按站内小写口径落为 unpaid/paid/cancelled/refunded，后台筛选与标签四种都支持；「已退款」暂只保留口径（插件后台同样只有查看与删除两个动作）。用户端流程按本站风格实现（插件 clientarea 的 PHP 与模板不可读），用户端路由挂在 service.read 权限下。
 
 验证：`gofmt` / `go build ./...` / `go vet ./...` 与 `npx vue-tsc --noEmit` 全部通过。
 
