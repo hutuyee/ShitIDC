@@ -989,7 +989,7 @@ CBAP 仓库 `plugins/addon/` 下 30 个 zip 经逐个检查：**包内全部 `.p
 | ProductDropDownSelect | 商品下拉选择（线索不足） | 未落地（前端仅「商品选择」） |
 | ProductNumLimit | 购买数量限制 | 已对齐（商品自带单客户限购） |
 | ProductRelatedLimit | 关联购买限制 | 已对齐（§10.20） |
-| TicketInternalPremium | 工单内部备注/内部工单 | 未落地 |
+| TicketInternalPremium | 工单内部备注/内部工单 | 已对齐（§10.29） |
 | TicketPremium | 工单高级版（部门/字段/回执模板） | 部分（基础工单已有） |
 | WanyunResource | 万云资源：自定义字段、节点 | 未落地 |
 
@@ -1289,5 +1289,26 @@ CBAP 包 `addon/ClientCare.zip` 主类加密，前端资产可读：后台「客
 | 用户端 | 站内信详情（上一篇 / 下一篇） | 用户中心「消息」页：列表 + 详情（自动标记已读、上一篇 / 下一篇）；接口 GET /client-care/mails、GET /client-care/mails/:id、POST /client-care/mails/:id/read |
 
 说明：repeat_send 关闭时同一任务对同一用户只投递一次（按 job_id + user_id 去重）；推送时间点（时 / 分）按服务器本地时区解释；邮件模板仅用于快速填充邮件标题，邮件正文取推送内容。
+
+验证：`gofmt` / `go build ./...` / `go vet ./...` 与 `npx vue-tsc --noEmit` 全部通过。
+
+### 10.29 TicketInternalPremium 插件（内部工单）（本轮补齐）
+
+CBAP 包 `addon/TicketInternalPremium.zip` 主类加密，前端资产可读：后台四个页面——「内部工单」列表（关键词 / 类型 / 状态 / 发起人 / 跟进人 / 领取人筛选，超时角标；行内接单 / 转单 / 关闭 / 评分；新建弹窗含关联用户与产品、关联工单、紧急程度、备注）、工单配置（部门设置 / 工单状态 / 预设回复 / 其他设置）、定时工单（循环周期 + 日期范围 + 触发时间）、工单统计；用户端无独立页面（面向内部协作，与用户工单面板配套）。本轮按该契约落地：
+
+| 维度 | 参考实现 | ShitIDC 落地 |
+|---|---|---|
+| 部门与类型 | 部门（名称 / 管理人员 / 主管）+ 部门下类型（名称 / 处理时限小时） | ticket_internal_departments / ticket_internal_types（044 迁移）；编辑部门即重建其类型；有工单引用时拒绝删除 |
+| 工单状态 | 默认 4 个系统状态（待接单 / 待回复 / 已回复 / 已关闭），可自定义名称 / 颜色 / 完结状态；系统状态不可改删 | ticket_internal_statuses（key 唯一 + system 保护）；后台「工单配置 → 工单状态」行内编辑 / 新增 / 删除 |
+| 工单流转 | 新建 / 接单 / 回复 / 转单 / 处理完成 / 关闭 / 评分 | 编号 `TI+日期+5 位序号`；order_button 开启时回复前需先接单，follow_limit 开启时仅跟进人可回复；转单校验目标人员权限并写入转交备注；处理完成可选同时关闭 |
+| 超时判定 | 处理时限（小时）内完成；剩余不足 15% 视为即将超时 | 截止 = 创建时间 + 类型处理时限；完结且按期完成记「按期」，否则显示超时 / 即将超时角标；发站内提醒受 will_timeout_notice 开关控制 |
+| 详情与协作 | 沟通记录（回复 + 备注）、预设回复、操作日志 | ticket_internal_replies / notes / logs；详情页回复 + 预设回复弹窗 + 添加备注 + 日志弹窗；回复时自动补记第一处理人 |
+| 评分 | 发起人评分 / 主管评分，形成综合分 | 0.5–5 星；被评分主体为第一处理人；两类评分分别落库，综合分与排名按评分角色（creator / director）过滤 |
+| 定时工单 | 循环周期（每 N 天 / 自然月 / 年）+ 日期范围 + 触发 HH:mm | ticket_internal_cron_jobs；调度器 @every 1m 生成到期工单并推进 next_run_at，超出结束时间自动置停 |
+| 统计 | 单量 / 处理时长 / 评分 / 超时占比；按部门与个人排名；评分角色筛选 | 后台「内部工单统计」页：日期范围 + 评分角色（全部 / 发起人 / 主管）+ 范围（所有部门 / 按部门 / 按个人），统计卡 + 平均分排名 + 时长排名进度条 |
+| 其他设置 | 接单按钮 / 跟进人限制 / 时限提醒 / 刷新时间 | ticket_internal_config（order_button / follow_limit / will_timeout_notice / refresh_time）；调度器 @every 5m 扫描剩余不足 15% 的工单发站内通知 |
+| 后台接口 | /admin/ticket-internal 全套 | tickets（列表 / 新建 / 详情 / 保存 / 日志 / 回复 / 接单 / 转单 / 关闭 / 处理完成 / 评分 / 备注）、department / status / prereply / config / staff / hosts / cron / statistics / rank（评分与时长按部门 / 个人）；权限 `ticket_internal.manage`（admin 默认授权） |
+
+说明：列表 / 详情中的附件字段保留但未接文件上传；提醒与通知均为站内通知；用户端无独立入口（内部工单面向管理员协作）。
 
 验证：`gofmt` / `go build ./...` / `go vet ./...` 与 `npx vue-tsc --noEmit` 全部通过。
