@@ -831,3 +831,22 @@ CBAP 包 gateway 目录的明文插件此前大多已对齐，本轮清掉最后
 | 钱包充值 | 插件未特别限制 | 明确不支持：手动建单与 PrepareRecharge 都拒绝线下支付，避免「转账后余额无人确认到账」 |
 
 无新增迁移（复用 payment_providers 的 config JSON 字段）。前端：订单页「选择支付方式」按渠道切换文案与弹窗，钱包充值选项过滤 manual，后台可配置收款说明并在订单中心「确认收款」。
+
+### 10.10 待办事项 widget（widget/ToDo）与实名审核页（本轮补齐）
+
+CBAP 包 `widget/` 下只有一个插件 `ToDo`：管理端首页把各附属插件的待处理数量聚合成一张卡片，装了哪个插件就显示哪一项，点击跳转到对应插件页（`template/` 的 cart1/cart2 与 `sub_server/` 的 bthostx/kanghostx 仍在队列中）。ShitIDC 按同样口径落地为管理控制台「待办事项」面板（`GET /admin/todos`）：
+
+| 魔方 ToDo 项 | ShitIDC 数据口径 | 落地页 |
+|---|---|---|
+| pending_work_orders 待处理工单 | tickets status IN ('open','pending') | /admin/tickets |
+| pending_real_name_authentication 实名认证待审 | certifications status='pending' 且 provider_url 为空（扫码轮询中的记录会自动出结果，不计入） | /admin/certifications（本轮新增） |
+| pending_host_num 开通中产品数量 | services status IN ('pending','provisioning') | /admin/services |
+
+未映射项（均为业务模型本身不同，不强行编造）：
+- pending_refunds 待处理退款：ShitIDC 退款是即时的冲正交易（钱包入账）或网关原路退回，没有「待处理」队列；
+- pending_withdrawals 待处理提现、to_be_confirmed_recommend 待确认推介：ShitIDC 无提现功能，推广佣金为支付成功即时入账；
+- pending_invoices 待处理发票：魔方 IdcsmartInvoice 指发票（开票 / 寄送）流程，ShitIDC 的 invoice 是账单（unpaid/paid/void），语义不同。
+
+与插件的差异：魔方 ToDo 对所有管理员显示同等项；ShitIDC 的 /admin/todos 按模块权限过滤——ticket.manage / user.manage / service.manage 各见各的项，三项权限都没有返回 403，前端同样按权限渲染。
+
+顺带补齐实名审核界面：`adminListCertifications` / `adminReviewCertification` 两个 API 在引入实名核验通道时就已存在，但一直没有管理端入口。本轮新增「实名审核」页（状态筛选、通过、驳回并写明原因；记录始终脱敏展示），接入后台侧边栏，也作为待办事项里「待审实名认证」的落地页。
