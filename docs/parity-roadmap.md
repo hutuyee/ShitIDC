@@ -845,7 +845,7 @@ CBAP 包 `widget/` 下只有一个插件 `ToDo`：管理端首页把各附属插
 未映射项（均为业务模型本身不同，不强行编造）：
 - pending_refunds 待处理退款：ShitIDC 退款是即时的冲正交易（钱包入账）或网关原路退回，没有「待处理」队列；
 - pending_withdrawals 待处理提现、to_be_confirmed_recommend 待确认推介：ShitIDC 无提现功能，推广佣金为支付成功即时入账；
-- pending_invoices 待处理发票：魔方 IdcsmartInvoice 指发票（开票 / 寄送）流程，ShitIDC 的 invoice 是账单（unpaid/paid/void），语义不同。
+- pending_invoices 待处理发票：魔方 IdcsmartInvoice 指发票（开票 / 寄送）流程，ShitIDC 的 invoice 是账单（unpaid/paid/void），语义不同（开票申请流程已于 §10.24 对齐，widget 计数仍按账单口径）。
 
 与插件的差异：魔方 ToDo 对所有管理员显示同等项；ShitIDC 的 /admin/todos 按模块权限过滤——ticket.manage / user.manage / service.manage 各见各的项，三项权限都没有返回 403，前端同样按权限渲染。
 
@@ -975,7 +975,7 @@ CBAP 仓库 `plugins/addon/` 下 30 个 zip 经逐个检查：**包内全部 `.p
 | HostTransfer | 主机转移 | 未落地 |
 | IdcsmartClientLevel | 客户等级：三级、商品可选、批量保存 | 已对齐（客户组差异定价，口径等价） |
 | IdcsmartDomain | 域名 | 跳过（§9.4） |
-| IdcsmartInvoice | 开票申请：抬头/快递/邮寄/驳回 | 未落地（站内「发票」指账单口径） |
+| IdcsmartInvoice | 开票申请：抬头/快递/邮寄/驳回 | 已对齐（§10.24） |
 | IdcsmartRecommend | 推荐/关联商品：分组、排序、复制 | 未落地（商品页仅有「推荐商品」标记） |
 | IdcsmartSale | 销售统计：消费排名、时间窗图表 | 部分（统计页已有；业务经理维度见 §10.8 说明） |
 | IdcsmartStatistics | 统计图表 | 已对齐（后台统计/仪表盘） |
@@ -1185,5 +1185,34 @@ CBAP 包 `addon/CycleArtificialOrder.zip` 的 PHP（controller/model/validate/au
 - 037 迁移同时把 `orders.kind` CHECK 放开到 `('new','renewal','upgrade','artificial')`——此前 `store_upgrades.go` 写入的升级订单会被旧约束拒绝，属既有隐性缺陷，本轮一并修复；
 - 生成规则删除后子订单保留（关联置空），订单 / 账单 / 支付记录不物理删除；
 - 站内人工订单固定以 CNY 记账（与站点主币种一致），金额前缀沿用 ¥。
+
+验证：`gofmt` / `go build ./...` / `go vet` / `vue-tsc --noEmit`。
+
+### 10.24 IdcsmartInvoice 插件（发票管理）（本轮补齐）
+
+CBAP 包 `addon/IdcsmartInvoice.zip` 的 PHP（controller/model/validate/auth/route）全部 ionCube 加密，前端 `template/{admin,clientarea}`（api / js / lang / 页面）可读，接口、字段与状态机取自这些文件。状态机：pending 待审核 / unpaid 待支付 / wait_send 待发出 / sent 已发出 / reject 已驳回 / cancel 作废 / flushed 已冲红。
+
+| 维度 | 参考实现（插件前端契约） | ShitIDC 落地 |
+|---|---|---|
+| 发票抬头 | invoice_title：title_type 公司 company / 个人 person、title、invoice_type 普票 normal / 专票 special、公司地址、税务登记号、开户行、开户账号 | `invoice_titles` 表（038 迁移）同名字段；专票必填税务登记号；用户维度 CRUD（/invoice_title），后台只读 + 批量删除 |
+| 收件地址 | invoice_address：rec_type 纸质 paper / 电子 email、收件人、省市区、详细地址、电话、邮箱、收件网址、默认地址 | `invoice_addresses` 表；纸质必填地址与电话、电子必填邮箱或网址；默认地址同用户唯一（保存时互斥） |
+| 发票项目 | invoice_project：名称、普票税率 / 收税金额、专票开关、专票税率 / 收税金额 | `invoice_projects` 表；税率与收税比例对外按百分比（内部基点，100 = 1%） |
+| 发票设置 | invoice_config：invoice_manage 开关、pre_invoice 允许未支付订单、across_year_invoice 允许往年发票、快递方式 parcel[{id,name,price}] | 设置键 `idcsmart_invoice`；用户端在 invoice_manage 关闭时统一返回 403 INVOICE_DISABLED；快递方式保存时清洗（空名称忽略、价格非负、编号补全） |
+| 申请开票 | 勾选订单（可多选）+ 抬头 + 收件 + 项目 + 格式 pdf / ofd / xml，先试算税金与快递费 | `POST /invoice/price` 试算（price / tax_rate / tax_fee / tax_price / parcel_name / parcel_price / total / fee / host[]，字段名与插件一致）；`POST /invoice` 创建，票面合计 = 订单合计 + 税金 + 快递费 |
+| 可开票订单 | 已支付订单；pre_invoice 开启后可选未支付订单；跨年订单需 across_year_invoice；已有有效申请的订单不可重复选 | `GET /invoice_request?status=Paid|Unpaid`；有效申请状态为 pending / unpaid / wait_send / sent（cancel / reject / flushed 放开重开），跨年按订单创建年份判断 |
+| 费用单 | 税金 / 快递费需支付后才能开票 | 费用大于 0 时创建 `kind='artificial'`、`kind_detail='invoice_fee'` 的人工订单并置申请 unpaid（明细为费用摘要、7 天到期、币种随所选订单）；钱包 / 在线支付完成后由结算流程把申请推进到 pending，支付不开通服务；人工订单不参与超时自动取消 |
+| 用户操作 | 列表 / 详情 / 作废 / 下载发票文件 | `GET /invoice`、`GET /invoice/:id`、`DELETE /invoice/:id`（pending / unpaid / reject 可作废，未支付费用单一并作废）、`GET /invoice/:id/invoice_filename` 下载 |
+| 后台操作 | 审核通过 / 驳回 / 发出（纸质快递单号 + 快递单照片、电子上传发票文件）/ 冲红 / 删除文件 | `/admin/invoice*`：confirm（pending → wait_send）、reject（pending / wait_send → reject，原因必填）、send（wait_send → sent；纸质须快递单号、电子须先上传文件；支持 multipart 快递单照片）、flush（sent → flushed 冲红）、upload（pdf / ofd / xml / zip，ofd 校验 PK 头）、文件下载 / 删除与快递单照片查看，全部写审计 |
+| 上传存储 | 插件自带上传目录 | 本机 `uploads/invoices/<申请号>/`（uuid 命名、强制下载、路径穿越校验）；配置 OSS 后转存 private 桶并 302 签名链接（与巡查记录共用上传基础设施） |
+| 迁移 | — | `038_idcsmart_invoice.sql`（5 张表 + invoice.manage 权限，后台角色自动授权）、`039_invoice_parcel_image.sql`（快递单照片列） |
+| 前台页面 | 插件自带用户端 / 后台页面 | 用户端 `/invoice`（申请开票 / 开票记录 / 发票抬头 / 收件地址，顶部导航「发票」）；后台 `/admin/invoices`（发票申请 / 设置 / 项目 / 用户抬头 / 收件地址，侧栏「发票管理」） |
+
+口径说明（加密代码无法比对，按可见契约的最保守解释）：
+
+- 站内既有「账单」（/invoices，billing 口径）与插件「发票」是两套概念：本轮新增发票页面，不改动账单口径；
+- 申请创建时快照抬头与收件信息（含税号 / 银行 / 地址），此后修改或删除抬头 / 地址不影响历史申请；
+- OFD / XML 仅支持电子发票（收件方式为电子），纸质发票固定 pdf；
+- 作废 / 驳回 / 冲红都不物理删除申请：作废仅放开订单重开并作废未支付费用单，已支付费用单需走退款流程；
+- 后台「查看快递单照片」对 OSS 存储返回签名图片地址，本机存储则按附件下载处理。
 
 验证：`gofmt` / `go build ./...` / `go vet` / `vue-tsc --noEmit`。
