@@ -983,7 +983,7 @@ CBAP 仓库 `plugins/addon/` 下 30 个 zip 经逐个检查：**包内全部 `.p
 | IdcsmartWebhook | 消息推送（钉钉/企业微信等） | 已对齐（internal/webhook + 后台 Webhook 页） |
 | ManualResource | 手动资源：供应商、noVNC 控制台 | 未落地 |
 | NoticeSendMerge | 通知合并发送 | 未落地 |
-| ProductCashback | 商品返现 | 未落地 |
+| ProductCashback | 商品返现 | 已对齐（§10.16） |
 | ProductCertLimit | 产品实名限制 | 未落地 |
 | ProductCycleLimit | 购买周期限制 | 未落地 |
 | ProductDropDownSelect | 商品下拉选择（线索不足） | 未落地（前端仅「商品选择」） |
@@ -998,3 +998,23 @@ CBAP 仓库 `plugins/addon/` 下 30 个 zip 经逐个检查：**包内全部 `.p
 说明：未落地项的共同原因是「服务端加密 + 无对外契约」；其中多数（FlowPacket、EventPromotion、Product* 限制系列、HostTransfer）站内已有可复用的骨架（商品/订单/结算/事件），后续可逐个按其前端资产可见的字段面直接设计实现，无需参考加密代码。
 
 验证：本轮纯审计与文档，无代码改动。
+
+### 10.16 ProductCashback 插件（商品返现）（本轮补齐）
+
+CBAP 包 `addon/ProductCashback.zip` 主类加密，但 `template/admin/api/index.js` 与语言包可读，契约完整：后台按商品配置返现规则（`product_id`、`type=fixed`、`price`、`period`、`status`），列表 / 新增 / 编辑 / 启停 / 删除五个接口 + 商品选择。本轮按该契约落地「商品返现」：
+
+| 维度 | 参考实现 | ShitIDC 落地 |
+|---|---|---|
+| 规则字段 | product_id / type（固定金额）/ price / period / status | `product_cashbacks` 表（030 迁移）：product_id 唯一、price_cents、period_days、active |
+| 后台接口 | GET/POST /product_cashback、PUT /product_cashback/{id}、PUT /{id}/status、DELETE /{id} | `/admin/product-cashbacks` 五件套（`product.write` 权限 + CSRF + 审计） |
+| 后台页面 | 插件自带管理页 | `/admin/cashbacks`「商品返现」页：商品选择、金额（元）、期限、启停、编辑、删除 |
+| 返现行为 | 购买后返现到账户余额；返现金额超过购买金额时按购买金额返现 | 支付成功收尾（afterPaymentCompleted）调用 `PayProductCashback`：金额 = min(规则金额, 订单项小计)，多商品合并入账 |
+| 幂等 | 插件未说明 | 钱包流水 `idempotency_key=cashback:{订单}`，同一订单只返一次；币种随订单 |
+
+口径说明（加密代码无法验证，按可见契约的最保守解释实现）：
+
+- 「可返现期限」= 购买后 N 天内（0=永久）：超期订单不返现；页面按「购买后 N 天内 / 永久」展示；
+- 返现即时到账（支付成功即入账），钱包流水 reference_type=cashback，用户账单页可见「商品返现」入账记录；
+- 多币种：按订单币种等额入账（原插件为单币种系统，无汇率换算语义）；该币种无钱包账户时跳过、不影响支付。
+
+验证：`gofmt` / `go build ./...` / `go vet` / `vue-tsc --noEmit`。
