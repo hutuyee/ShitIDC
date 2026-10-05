@@ -27,6 +27,7 @@ import AdminProducts from './views/AdminProducts.vue'
 import AdminAnnouncements from './views/AdminAnnouncements.vue'
 import AdminStats from './views/AdminStats.vue'
 import AdminCoupons from './views/AdminCoupons.vue'
+import AdminCashbacks from './views/AdminCashbacks.vue'
 import AdminCertifications from './views/AdminCertifications.vue'
 import AdminExport from './views/AdminExport.vue'
 import AdminExpiredIpLogs from './views/AdminExpiredIpLogs.vue'
@@ -56,6 +57,7 @@ const router = createRouter({ history: createWebHistory(), routes: [
   { path: ADMIN_PATH + '/orders', component: AdminOrders },
   { path: ADMIN_PATH + '/stats', component: AdminStats },
   { path: ADMIN_PATH + '/coupons', component: AdminCoupons },
+  { path: ADMIN_PATH + '/cashbacks', component: AdminCashbacks },
   { path: ADMIN_PATH + '/certifications', component: AdminCertifications },
   { path: ADMIN_PATH + '/export', component: AdminExport },
   { path: ADMIN_PATH + '/expired-ip-logs', component: AdminExpiredIpLogs },
