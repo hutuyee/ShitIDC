@@ -807,3 +807,14 @@ CBAP 包 gateway 目录的明文插件此前大多已对齐，本轮清掉最后
 
 凭据形态：global_alipay 的 Secret 为 JSON {"key","currency","rate"}（currency 默认 HKD，rate 默认 1，rate = 收取货币/系统货币），也接受纯密钥字符串；后台「支付渠道」面板已加中文标签。
 
+### 10.8 附属插件补齐：到期 IP 记录与数据导出至 Excel（本轮补齐）
+
+主程序包 public/plugins/addons/ 里除加密插件（expired_auto_delete_bill / product_divert）与示例插件（demo_style）外，还剩两个可读插件，本轮对齐：
+
+| 插件 | 参考实现 | ShitIDC 对齐 |
+|---|---|---|
+| expired_ip_log 到期产品删除IP记录 | 挂 afterModuleTerminate，把 host 的 dedicatedip / assignedips / regdate / uid 写入 shd_expired_ip_log，后台列表查看 | 新增 expired_ip_logs 表；worker 终止成功（FinalizeServiceTransition 之后）调用 RecordExpiredIPLog 快照 IP——IP 取自开通时写入 provider_payload 的实例数据（NOKVM 的 main_ip / assigned_ips，另按 dedicatedip / server_ip / ip 等别名兜底）；后台「到期IP记录」页可搜索，记录只增不改 |
+| export_excel 数据导出至 Excel | shd_export_plugin 保存「自定义名称 + 导出列表 + 参数字段」，PhpSpreadsheet 按时间区间导出；内置 billPay（账单列表（已支付））与 achievement（我的业绩） | 新增 export_configs 表与「导出中心」页：自定义名称 + 数据集 + 字段多选，按收款/结算时间区间导出 xlsx；internal/xlsx 用 archive/zip 按 OOXML 最小结构生成（内联字符串 + 加粗表头 + 金额数字列），不引第三方库。数据集：bill_pay「账单列表（已支付）」（含付款方式 / 在线支付金额 / 余额拆分，主机与主 IP 取订单开通的第一个服务）与 achievement「我的业绩」——ShitIDC 没有「业务经理」，业绩按推广人佣金口径，字段差异已在此说明 |
+
+迁移：027（expired_ip_logs）/ 028（export_configs，含两条预置列表）。
+
