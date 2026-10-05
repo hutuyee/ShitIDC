@@ -962,7 +962,7 @@ CBAP 仓库 `plugins/addon/` 下 30 个 zip 经逐个检查：**包内全部 `.p
 
 | 包 | 前端可读线索 | 判定 |
 |---|---|---|
-| AbnormalInspectionRecords | 异常记录：关联产品、标签、导出 | 未落地 |
+| AbnormalInspectionRecords | 异常记录：关联产品、标签、导出 | 已对齐（§10.18） |
 | ClientCare | 客户关怀：邮件/站内信、周期推送、指定用户 | 未落地 |
 | ClientCustomField | 客户自定义字段（管理列表/申请） | 未落地（站内仅有商品自定义字段） |
 | CostPay | 支出记录：来源/主体/金额/日期 | 已对齐（§10.17） |
@@ -1041,5 +1041,28 @@ CBAP 包 `addon/CostPay.zip` 主类（`controller/model/validate` 与语言包�
 - 字段排序：插件用前端拖动 + `prev_id`；页面提供「上移/下移」按钮，调用同一 `/drag` 语义（移到目标前一位之后），服务端重排全量权重，避免权重碰撞；
 - 时间口径（今日/本月/今年）沿用站内统计约定：PostgreSQL `date_trunc` 取数据库时区（UTC）；
 - 插件权限点（auth_addon_cost_pay_show_tab/create/update/delete/field_manage）对应站内统一权限 `finance.report`（成本属财务敏感数据，与「财务统计」「导出中心」同权限）。
+
+验证：`gofmt` / `go build ./...` / `go vet` / `vue-tsc --noEmit`。
+
+### 10.18 AbnormalInspectionRecords 插件（异常巡查记录）（本轮补齐）
+
+CBAP 包 `addon/AbnormalInspectionRecords.zip` 的 PHP（含 config/lang/route）全部 ionCube 加密，前端 `template/admin/api/index.js`、`lang/zh-cn.js`、`js/index.js`、`index.html` 可读，接口与字段面完整取自这些文件。
+
+| 维度 | 参考实现（插件前端契约） | ShitIDC 落地 |
+|---|---|---|
+| 记录字段 | client_id 异常用户、host_id 关联产品、ip 异常时IP（必填、格式校验）、matter 异常事项、measure 处理措施、process_time 处理时间、img 异常截图（多张） | `abnormal_inspection_records` 表（032 迁移）：user_id/service_id/ip/matter/measure/process_time/images(JSONB) |
+| 展示字段 | username/company/phone/email、product_name/host_name、order_id、pay_time、admin_name | 列表 join users / user_profiles / services / products / orders 实时读出；pay_time 取订单 `paid_at`；admin_name 取最后提交人 |
+| 接口 | GET/POST /abnormal_inspection_records、PUT/DELETE /{id}、GET /export_excel（blob） | 同名语义：`/admin/abnormal-inspection-records` 增删改查 + `export.xlsx` + 截图上传 / 读取（service.manage + CSRF + 审计） |
+| 列表参数 | keywords（用户/公司/联系方式/IP）、start_time/end_time、page/limit/orderby/sort | 同名参数；时间过滤按「处理时间」，输出时间字段一律 Unix 秒 |
+| 截图 | 上传后存 save_name，展示时可放大（viewer） | `POST /admin/abnormal-inspection-records/images`（png/jpg/jpeg/webp/gif、≤5MB、magic 校验）→ 本机 `uploads/inspection/`；配置了对象存储通道则转存 OSS（`oss:` 前缀，读取 302 签名地址）；`NImage` 点击放大 |
+| 权限 | auth_abnormal_inspection_records_{create,check,update,delete,export}_record | 统一 `service.manage`（巡查是服务运维工具） |
+| 后台页面 | 插件自带管理页 | `/admin/inspection-records`：关键词 / 处理时间筛选、列表、新增 / 编辑（用户 → 其名下产品联动选择）、详情弹窗（含截图）、导出 Excel |
+
+口径说明（加密代码无法比对，按可见契约的最保守解释）：
+
+- 列表日期区间按「处理时间」过滤（插件参数名 start_time/end_time 无更多线索；处理时间是该记录唯一的业务时间字段，购买时间是订单派生字段不可编辑）；
+- 记录关联的是「用户 + 其名下的服务（产品）」，服务必须属于所选用户；订单 ID 与购买时间由服务对应订单实时派生，不冗余落库（插件为冗余存储，资料会过期）；
+- 站点用户资料无「国家码」分列，`phone_code` 固定返回空串，页面直接展示 `phone`；
+- 截图删除记录时不删文件（与插件一致，保留回溯材料）；`img` 入参同时兼容插件的 `["文件名"]` 与本站 `[{stored,name}]` 两种形状。
 
 验证：`gofmt` / `go build ./...` / `go vet` / `vue-tsc --noEmit`。
