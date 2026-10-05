@@ -20,6 +20,7 @@ import ApiTokens from './views/ApiTokens.vue'
 import Admin from './views/Admin.vue'
 import AdminProviders from './views/AdminProviders.vue'
 import AdminServices from './views/AdminServices.vue'
+import AdminServiceTransfers from './views/AdminServiceTransfers.vue'
 import AdminUsers from './views/AdminUsers.vue'
 import AdminTickets from './views/AdminTickets.vue'
 import AdminLogs from './views/AdminLogs.vue'
@@ -90,6 +91,7 @@ const router = createRouter({ history: createWebHistory(), routes: [
   { path: ADMIN_PATH + '/announcements', component: AdminAnnouncements },
   { path: ADMIN_PATH + '/providers', component: AdminProviders },
   { path: ADMIN_PATH + '/services', component: AdminServices },
+  { path: ADMIN_PATH + '/service-transfers', component: AdminServiceTransfers },
   { path: ADMIN_PATH + '/users', component: AdminUsers },
   { path: ADMIN_PATH + '/tickets', component: AdminTickets },
   { path: ADMIN_PATH + '/logs', component: AdminLogs },

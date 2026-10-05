@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { NButton, NInput, NSelect, NTag, useDialog, useMessage } from 'naive-ui'
 import { api, dataOf } from '../api'
+import ServiceTransferModal from '../components/ServiceTransferModal.vue'
 
 const message = useMessage()
 const dialog = useDialog()
@@ -73,6 +74,13 @@ async function retry(s: any) {
   }
 }
 
+const transferOpen = ref(false)
+const transferService = ref<any>(null)
+function openTransfer(s: any) {
+  transferService.value = s
+  transferOpen.value = true
+}
+
 onMounted(load)
 </script>
 
@@ -100,10 +108,12 @@ onMounted(load)
             <NButton v-if="s.status === 'suspended'" size="tiny" type="primary" secondary :loading="busy === s.id + 'unsuspend'" @click="act(s, 'unsuspend')">恢复</NButton>
             <NButton v-if="['active', 'suspended'].includes(s.status)" size="tiny" type="error" secondary :loading="busy === s.id + 'terminate'" @click="act(s, 'terminate')">终止</NButton>
             <NButton v-if="s.status === 'failed'" size="tiny" type="info" secondary :loading="busy === s.id + 'retry'" @click="retry(s)">重试开通</NButton>
+            <NButton v-if="s.status !== 'terminated'" size="tiny" secondary @click="openTransfer(s)">转移</NButton>
           </span>
         </div>
       </div></div>
       <div v-else class="empty-box">没有匹配的服务。</div>
     </section>
+    <ServiceTransferModal v-model:show="transferOpen" :service="transferService" @done="load" />
   </div>
 </template>

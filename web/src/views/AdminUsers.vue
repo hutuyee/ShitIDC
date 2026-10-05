@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { NButton, NDrawer, NDrawerContent, NInput, NInputNumber, NModal, NTabPane, NTabs, NTag, useDialog, useMessage } from 'naive-ui'
 import { api, dataOf } from '../api'
+import ServiceTransferModal from '../components/ServiceTransferModal.vue'
 import { useAuthStore } from '../stores/auth'
 
 const auth = useAuthStore()
@@ -22,6 +23,14 @@ const adjustOpen = ref(false)
 const amount = ref<number | null>(null)
 const reason = ref('')
 const busy = ref(false)
+
+// 产品转移（对齐魔方 CBAP HostTransfer 插件）：在「机器」tab 直接发起。
+const transferOpen = ref(false)
+const transferService = ref<any>(null)
+function openTransfer(s: any) {
+  transferService.value = s
+  transferOpen.value = true
+}
 
 // 实名资料单独拉取（含脱敏/完整两种模式）。
 const profileOpen = ref(false)
@@ -252,7 +261,10 @@ onMounted(load)
                     <b>{{ s.product_name }}</b>
                     <small class="muted">{{ s.billing_cycle || '—' }} · 到期 {{ fmtDate(s.expires_at) }}</small>
                   </div>
-                  <NTag size="tiny" :type="statusType(s.status)">{{ statusText[s.status] || s.status }}</NTag>
+                  <div class="row" style="gap:6px;align-items:center">
+                    <NTag size="tiny" :type="statusType(s.status)">{{ statusText[s.status] || s.status }}</NTag>
+                    <NButton v-if="s.status !== 'terminated'" size="tiny" secondary @click="openTransfer(s)">转移</NButton>
+                  </div>
                 </div>
               </div>
             </NTabPane>
@@ -313,6 +325,7 @@ onMounted(load)
       </div>
       <div v-else class="empty-box">加载中…</div>
     </NModal>
+    <ServiceTransferModal v-model:show="transferOpen" :service="transferService" @done="refreshDetail" />
   </div>
 </template>
 
