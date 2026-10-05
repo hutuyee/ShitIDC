@@ -403,6 +403,15 @@ func (s *Store) createOrderInTx(ctx context.Context, tx pgx.Tx, userID int64, pr
 	if total < 0 {
 		return model.Order{}, fmt.Errorf("订单金额异常")
 	}
+	// 活动促销（对齐 EventPromotion）：满足条件的活动自动生效，按排序只取一个。
+	promotionDiscountCents := int64(0)
+	promotionID := int64(0)
+	if d, pid, perr := s.promotionDiscountTx(ctx, tx, userID, p.ID, billingCycle, total); perr != nil {
+		return model.Order{}, perr
+	} else if d > 0 {
+		promotionDiscountCents, promotionID = d, pid
+		total -= d
+	}
 	// 代金券（对齐 IdcsmartVoucher）：在券后金额上定额抵扣，最多抵到 0。
 	voucherDiscountCents := int64(0)
 	voucherGrantID := int64(0)
@@ -432,7 +441,7 @@ func (s *Store) createOrderInTx(ctx context.Context, tx pgx.Tx, userID int64, pr
 		payMethod = "postpaid"
 		dueDays = creditDays
 	}
-	if err := tx.QueryRow(ctx, `INSERT INTO orders(user_id,status,kind,total_cents,currency,discount_cents,coupon_code,kind_detail,checkout_group_id,pay_method) VALUES($1,'unpaid','new',$2,$3,$4,$5,$6,NULLIF($7,0),$8) RETURNING id,public_id::text,user_id,status,kind,total_cents,currency,created_at,discount_cents,coupon_code`, userID, total, p.Currency, groupDiscount+couponDiscountCents+voucherDiscountCents, strings.ToLower(strings.TrimSpace(couponCode)), p.PayType, groupID, payMethod).Scan(&o.ID, &o.PublicID, &o.UserUID, &o.Status, &o.Kind, &o.TotalCents, &o.Currency, &o.CreatedAt, &o.DiscountCents, &o.CouponCode); err != nil {
+	if err := tx.QueryRow(ctx, `INSERT INTO orders(user_id,status,kind,total_cents,currency,discount_cents,coupon_code,kind_detail,checkout_group_id,pay_method,promotion_id) VALUES($1,'unpaid','new',$2,$3,$4,$5,$6,NULLIF($7,0),$8,NULLIF($9,0)) RETURNING id,public_id::text,user_id,status,kind,total_cents,currency,created_at,discount_cents,coupon_code`, userID, total, p.Currency, groupDiscount+couponDiscountCents+promotionDiscountCents+voucherDiscountCents, strings.ToLower(strings.TrimSpace(couponCode)), p.PayType, groupID, payMethod, promotionID).Scan(&o.ID, &o.PublicID, &o.UserUID, &o.Status, &o.Kind, &o.TotalCents, &o.Currency, &o.CreatedAt, &o.DiscountCents, &o.CouponCode); err != nil {
 		return model.Order{}, err
 	}
 	if err := markVoucherUsedTx(ctx, tx, voucherGrantID, o.ID); err != nil {
