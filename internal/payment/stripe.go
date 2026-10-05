@@ -132,7 +132,8 @@ func (g StripeGateway) PayURL(ctx context.Context, cfg ProviderConfig, p Prepare
 }
 
 // VerifyNotify checks the Stripe-Signature header (t=...,v1=...) against the
-// exact raw body, then parses the checkout.session.completed event.
+// exact raw body, then parses the checkout.session.completed event whose
+// payment_status is paid.
 func (g StripeGateway) VerifyNotify(cfg ProviderConfig, input NotifyInput) NotifyResult {
 	fail := func(err error) NotifyResult { return NotifyResult{OK: false, Err: err} }
 	s, err := parseStripeSecret(cfg.Secret)
@@ -153,6 +154,7 @@ func (g StripeGateway) VerifyNotify(cfg ProviderConfig, input NotifyInput) Notif
 				ID                string `json:"id"`
 				ClientReferenceID string `json:"client_reference_id"`
 				PaymentIntent     string `json:"payment_intent"`
+				PaymentStatus     string `json:"payment_status"`
 				AmountTotal       int64  `json:"amount_total"`
 				Currency          string `json:"currency"`
 			} `json:"object"`
@@ -163,6 +165,11 @@ func (g StripeGateway) VerifyNotify(cfg ProviderConfig, input NotifyInput) Notif
 	}
 	if evt.Type != "checkout.session.completed" {
 		return fail(fmt.Errorf("忽略事件 %s", evt.Type))
+	}
+	// 与参考插件一致：只有 payment_status=="paid" 才代表已收到钱——
+	// 异步支付方式的 completed 事件可能带 unpaid。
+	if evt.Data.Obj.PaymentStatus != "paid" {
+		return fail(fmt.Errorf("checkout session payment_status %q 不代表已支付", evt.Data.Obj.PaymentStatus))
 	}
 	if evt.Data.Obj.ClientReferenceID == "" {
 		return fail(errors.New("session 缺少 client_reference_id"))
