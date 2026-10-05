@@ -850,3 +850,29 @@ CBAP 包 `widget/` 下只有一个插件 `ToDo`：管理端首页把各附属插
 与插件的差异：魔方 ToDo 对所有管理员显示同等项；ShitIDC 的 /admin/todos 按模块权限过滤——ticket.manage / user.manage / service.manage 各见各的项，三项权限都没有返回 403，前端同样按权限渲染。
 
 顺带补齐实名审核界面：`adminListCertifications` / `adminReviewCertification` 两个 API 在引入实名核验通道时就已存在，但一直没有管理端入口。本轮新增「实名审核」页（状态筛选、通过、驳回并写明原因；记录始终脱敏展示），接入后台侧边栏，也作为待办事项里「待审实名认证」的落地页。
+
+### 10.11 kanghostx（V10 kangle 模块）配置键位对齐
+
+CBAP 包 `sub_server/kanghostx` 是「Kangle对接模块（V10版）」：面板侧协议与随包发布的 `servers/wlkanglepro` 完全同构（同一套 `s = md5(a + token + r)` 签名与 `/api/index.php?c=whm` 动作集），差异集中在商品配置键位与带宽单位上。本轮不新起第二个 Provider，而是把该键位直接接进现有 `wlkangle`（`internal/provider/wlkangle/wlkangle.go`）：两套键位互不重叠（wlkanglepro 用 `type`/`web_quota`，kanghostx 用 `way`/`parameterN`/`kl_*`），命中 kanghostx 键位时走 `kanghostxForm`，其余行为不变。
+
+| 维度 | kanghostx（V10） | ShitIDC 落地 |
+|---|---|---|
+| 开通方式 | `way`：0 自定义 / 1 弹性 | `isKanghostxConfig` 识别（way 或 parameter*/kl_* 键）；`way` 取 1/true/是 时读弹性键位 |
+| 自定义参数 | `parameter1..16` + `ftp` | 逐项映射 add_vh：cdn / subdir_flag / domain / max_subdir / subdir / web_quota / db_quota / flow_limit / speed_limit / max_connect / access / log_file / log_handle / ssi / htaccess / port |
+| 弹性参数 | `kl_site` `kl_sql` `kl_domain` `kl_zi` `kl_flow` `kl_speed` `kl_connect` `kl_access` `kl_htaccess` `kl_log_file` `kl_log_handle` `kl_ssi` | 同键位映射；`parameter1/2/5/16` 与 `ftp` 两种方式共用 |
+| 带宽单位 | 配置项是 M，PHP 里 `值 * 128` 换成面板的 KB | `speedLimitKb` 复刻 ×128；只作用于 kanghostx 键位（wlkanglepro 的 speed_limit 本就是 KB，不换算） |
+| 改配 | `_ChangePackage`：`add_vh&init=1&edit=1` | 同一映射 + `edit=1`（passwd 留空沿用现有密码，与既有实现一致） |
+| 签名 / 动作 | md5concat（`a`/`r`/`s` + `json=1`） | 复用既有客户端，签名与动作集完全一致 |
+
+有意差异（2 处，均为修正参考实现的问题）：
+
+- 参考实现 `_ChangePackage` 不区分 `way`、固定读 `kl_*`；ShitIDC 跟随 `way` 读对应键位，避免自定义产品（way=0）升降级时丢参数。
+- 空值不下发的口径与 PHP 的 `isset && !empty` 对齐，但「0」PHP 的 `!empty('0')` 会把它当空丢掉（如 `db_quota=0` 表示不开通数据库）；ShitIDC 按配置项语义原样下发。
+
+未落地项（接口/形态没有对应物，不强行编造）：
+
+- `GetHostInfo`/`Status`（`getvh`：0 运行 / 1 暂停 / 2 超流量 / 3 超数据库）：Provider 接口没有状态同步动作，也没有消费入口（服务状态由 ShitIDC 自己的 services 表管理）；
+- `on`/`off`（开/关机前查状态、超流量/超数据库拒绝操作）：这是面板管理端的独立动作对；PHP 的 `_SuspendAccount`/`_UnsuspendAccount`（以及 `_Renew`）本身没有状态守卫，ShitIDC 维持同一语义；
+- `ClientArea`/`ClientAreaOutput`（主机信息表、面板登录表单）与 `getServerIp`、`AllowFunction`：PHP 平台侧模板与能力声明；SPA 下对应信息在开通时落库（实例 Data 里的面板地址/账号/密码）。
+
+导入侧：`internal/zjmfimport` 按「形态」识别签名（`_CreateSign` 出现 `md5(` 即 md5concat），kanghostx 与 wlkanglepro 同构，其 `_ConfigOptions`（way/parameterN/kl_*）可被解析成商品配置项，配合本次键位映射直接可用。
