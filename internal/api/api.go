@@ -502,6 +502,8 @@ func (a *App) registerAdminRoutes(g *gin.RouterGroup) {
 	g.GET("/mail-templates", a.require("provider.manage"), a.adminListMailTemplates)
 	g.POST("/mail-templates", a.require("provider.manage"), a.csrf(), a.adminSaveMailTemplate)
 	g.DELETE("/mail-templates/:name", a.require("provider.manage"), a.csrf(), a.adminDeleteMailTemplate)
+	g.GET("/email-notice-admin", a.require("email_notice.manage"), a.adminGetEmailNoticeAdmin)
+	g.PUT("/email-notice-admin", a.require("email_notice.manage"), a.csrf(), a.adminSaveEmailNoticeAdmin)
 	g.GET("/currencies", a.require("wallet.adjust"), a.adminListCurrencies)
 	g.POST("/currencies", a.require("wallet.adjust"), a.csrf(), a.adminSaveCurrency)
 	g.DELETE("/currencies/:code", a.require("wallet.adjust"), a.csrf(), a.adminDeleteCurrency)

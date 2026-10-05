@@ -76,6 +76,56 @@ func (a *App) resolveMailSender(ctx context.Context) (func(context.Context, stri
 	}, "smtp", nil
 }
 
+// resolveMailSenderFor 返回指定通道（public_id）的发信函数；空值表示当前默认通道。
+func (a *App) resolveMailSenderFor(ctx context.Context, providerID string) (func(context.Context, string, string, string) error, string, error) {
+	providerID = strings.TrimSpace(providerID)
+	if providerID == "" {
+		return a.resolveMailSender(ctx)
+	}
+	pv, secretEnc, err := a.Store.GetMailProvider(ctx, providerID)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return nil, "", errors.New("指定的邮件通道不存在")
+		}
+		return nil, "", err
+	}
+	impl, ok := mail.Get(pv.Provider)
+	if !ok {
+		return nil, "", errors.New("未知的邮件通道：" + pv.Provider)
+	}
+	secret, serr := a.mailSecret(secretEnc)
+	if serr != nil {
+		return nil, "", serr
+	}
+	cfg := mail.Config{Provider: pv.Provider, Fields: pv.Config}
+	if verr := impl.Validate(cfg, secret); verr != nil {
+		return nil, "", verr
+	}
+	send := func(sctx context.Context, to, subject, body string) error {
+		serr := impl.Send(sctx, cfg, secret, mail.Message{To: to, Subject: subject, HTML: body})
+		a.Store.TouchMailProvider(sctx, pv.PublicID, serr == nil, errText(serr))
+		return serr
+	}
+	return send, pv.Provider, nil
+}
+
+// deliverMailVia 把邮件交给队列（可指定通道）；没有 Redis 时同步发送。
+func (a *App) deliverMailVia(ctx context.Context, to, subject, body, provider string) error {
+	if a.Queue != nil {
+		return a.Queue.MailSendVia(to, subject, body, provider)
+	}
+	sender, _, err := a.resolveMailSenderFor(ctx, provider)
+	if err != nil {
+		return err
+	}
+	return sender(ctx, to, subject, body)
+}
+
+// DeliverMailVia 供事件通知等内部模块复用发信管道（provider 为空 = 默认通道）。
+func (a *App) DeliverMailVia(ctx context.Context, to, subject, body, provider string) error {
+	return a.deliverMailVia(ctx, to, subject, body, provider)
+}
+
 // mailConfigured 判断当前是否存在可用的发信方式（通道或 SMTP）。
 // 注册/登录流程用它决定「邮箱验证」是否可以启用，避免只配了通道却提示未配置。
 func (a *App) mailConfigured(ctx context.Context) bool {
@@ -89,7 +139,7 @@ func (a *App) mailConfigured(ctx context.Context) bool {
 // deliverMail 把邮件交给队列；没有 Redis 时同步发送。
 func (a *App) deliverMail(ctx context.Context, to, subject, body string) error {
 	if a.Queue != nil {
-		return a.Queue.MailSend(to, subject, body)
+		return a.Queue.MailSendVia(to, subject, body, "")
 	}
 	sender, _, err := a.resolveMailSender(ctx)
 	if err != nil {

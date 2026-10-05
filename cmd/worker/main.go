@@ -57,6 +57,10 @@ func main() {
 	// emitted inside workers.
 	bus.Subscribe(webhook.Fanout(st, q, func(s string) (string, error) { return security.Decrypt(cfg.MasterKey, s) }))
 	notify.Install(bus, st, nil)
+	// 背景事件同样支持「值邮件通知管理员」（对齐魔方 EmailNoticeAdmin 插件）。
+	notify.InstallAdminMail(bus, st, func(ctx context.Context, to, subject, body, provider string) error {
+		return q.MailSendVia(to, subject, body, provider)
+	})
 	w := &worker{st: st, cfg: cfg, bus: bus}
 	srv := asynq.NewServer(asynq.RedisClientOpt{Addr: cfg.RedisAddr, Password: cfg.RedisPassword, DB: cfg.RedisDB}, asynq.Config{Concurrency: 12, Queues: map[string]int{"critical": 8, "default": 4}, RetryDelayFunc: func(n int, e error, t *asynq.Task) time.Duration {
 		if n > 6 {
@@ -301,9 +305,10 @@ func (w *worker) syncOne(ctx context.Context, pv model.Provider) error {
 
 func (w *worker) mailSend(ctx context.Context, t *asynq.Task) error {
 	var p struct {
-		To      string `json:"to"`
-		Subject string `json:"subject"`
-		Body    string `json:"body"`
+		To       string `json:"to"`
+		Subject  string `json:"subject"`
+		Body     string `json:"body"`
+		Provider string `json:"provider,omitempty"`
 	}
 	if err := json.Unmarshal(t.Payload(), &p); err != nil {
 		return fmt.Errorf("decode payload: %w", err)
@@ -312,7 +317,17 @@ func (w *worker) mailSend(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("%w: empty recipient", asynq.SkipRetry)
 	}
 	// 邮件通道优先；未配置通道时回退到内置 SMTP（与 API 侧解析顺序一致）。
-	pv, secretEnc, perr := w.st.ActiveMailProvider(ctx)
+	var pv store.MailProvider
+	var secretEnc string
+	var perr error
+	if strings.TrimSpace(p.Provider) != "" {
+		pv, secretEnc, perr = w.st.GetMailProvider(ctx, strings.TrimSpace(p.Provider))
+		if errors.Is(perr, store.ErrNotFound) {
+			return fmt.Errorf("%w: mail provider %s not found", asynq.SkipRetry, p.Provider)
+		}
+	} else {
+		pv, secretEnc, perr = w.st.ActiveMailProvider(ctx)
+	}
 	if perr == nil {
 		impl, ok := mail.Get(pv.Provider)
 		if !ok {

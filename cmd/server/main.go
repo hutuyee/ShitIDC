@@ -80,7 +80,9 @@ func main() {
 		}
 	}
 	notify.Install(bus, st, extHost)
-	router := api.NewRouter(&api.App{Store: st, Redis: rdb, Queue: q, Cfg: cfg, Bus: bus, ExtHost: extHost})
+	app := &api.App{Store: st, Redis: rdb, Queue: q, Cfg: cfg, Bus: bus, ExtHost: extHost}
+	notify.InstallAdminMail(bus, st, app.DeliverMailVia)
+	router := api.NewRouter(app)
 	srv := &http.Server{Addr: cfg.HTTPAddr, Handler: router, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 20 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 90 * time.Second, MaxHeaderBytes: 1 << 20}
 	go func() {
 		slog.Info("ShitIDC API listening", "addr", cfg.HTTPAddr)

@@ -44,8 +44,21 @@ func (c *Client) ProviderSync() error {
 	return c.enqueue(asynq.NewTask(TaskProviderSync, nil), "default", 3)
 }
 
+// MailPayload 是 mail.send 任务的载荷（Provider 为空 = 跟随当前默认通道）。
+type MailPayload struct {
+	To       string `json:"to"`
+	Subject  string `json:"subject"`
+	Body     string `json:"body"`
+	Provider string `json:"provider,omitempty"`
+}
+
 func (c *Client) MailSend(to, subject, body string) error {
-	return c.enqueue(asynq.NewTask(TaskMailSend, payload(map[string]string{"to": to, "subject": subject, "body": body})), "default", 5)
+	return c.MailSendVia(to, subject, body, "")
+}
+
+// MailSendVia 指定邮件通道发信（provider 为空时使用当前默认通道）。
+func (c *Client) MailSendVia(to, subject, body, provider string) error {
+	return c.enqueue(asynq.NewTask(TaskMailSend, payload(MailPayload{To: to, Subject: subject, Body: body, Provider: provider})), "default", 5)
 }
 
 func (c *Client) WebhookDeliver(deliveryID int64) error {
