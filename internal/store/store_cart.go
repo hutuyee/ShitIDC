@@ -356,6 +356,14 @@ WHERE c.user_id=$1 ORDER BY c.created_at, c.id FOR UPDATE OF c`, userID)
 		return CheckoutResult{}, fmt.Errorf("购物车是空的")
 	}
 	currency := lines[0].currency
+	// 捆绑限制：同一结算批次即视为「同时购买」，在整车维度校验。
+	cartProductIDs := make([]string, 0, len(lines))
+	for _, l := range lines {
+		cartProductIDs = append(cartProductIDs, l.productID)
+	}
+	if err := checkProductBundleLimits(ctx, tx, cartProductIDs); err != nil {
+		return CheckoutResult{}, err
+	}
 
 	// 先建批次，拿到 group id 供各订单引用。
 	var groupID int64

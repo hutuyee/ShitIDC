@@ -104,6 +104,11 @@ WHERE s.public_id=$1 AND s.user_id=$2 FOR UPDATE OF s`, servicePublicID, userID)
 	if serviceStatus != "active" && serviceStatus != "suspended" {
 		return model.Order{}, ErrInvalidState
 	}
+	// 关联限购的「必需 / 互斥」在续费时同样生效（捆绑无法在单服务续费里满足，
+	// 仅在购买时校验，见 CheckProductBundleLimits）。
+	if err := checkProductRelatedOwnership(ctx, tx, userID, productID, productName); err != nil {
+		return model.Order{}, err
+	}
 	// Prefer the current list price for the cycle; fall back to what the
 	// user originally paid (e.g. custom imported products without prices).
 	var price int64

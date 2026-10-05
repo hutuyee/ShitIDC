@@ -259,6 +259,10 @@ func (s *Store) CreateOrderInCurrency(ctx context.Context, userID int64, product
 // 差别只有两处：订单记 pay_method='postpaid'，发票到期日换成用户账期。
 // 下单时会占用授信额度（在事务内 FOR UPDATE 串行判断，并发下单不会超额）。
 func (s *Store) CreateOrderPostpaid(ctx context.Context, userID int64, productPublicID, billingCycle string, quantity int, couponCode string, cfgIn OrderConfigInput, currencyIn string, postpaid bool) (model.Order, error) {
+	// 捆绑限制：单品下单时，若该商品要求与关联商品同单购买，拦下并提示走购物车。
+	if err := s.CheckProductBundleLimits(ctx, []string{productPublicID}); err != nil {
+		return model.Order{}, err
+	}
 	var out model.Order
 	err := retrySerializable(ctx, orderRetryAttempts, func() error {
 		o, err := s.createOrderOnce(ctx, userID, productPublicID, billingCycle, quantity, couponCode, cfgIn, currencyIn, postpaid)
@@ -324,6 +328,10 @@ func (s *Store) createOrderInTx(ctx context.Context, tx pgx.Tx, userID int64, pr
 	}
 	// 库存 / 单次数量 / 单客户限购
 	if err := checkStockAndQtyTx(ctx, tx, p.ID, userID, quantity); err != nil {
+		return model.Order{}, err
+	}
+	// 商品购买限制插件对齐：实名要求 / 周期性限购 / 关联限购（必需、互斥）。
+	if err := s.checkProductPurchaseLimitsTx(ctx, tx, userID, p.ID, p.Name, quantity); err != nil {
 		return model.Order{}, err
 	}
 	// 配置项与自定义字段：校验 + 服务端计价
