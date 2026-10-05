@@ -332,10 +332,13 @@ func buildCreateForm(cfg map[string]any) url.Values {
 		}
 		return form
 	}
-	// 经典 bthosts：type == 1 是套餐开通，只带 plans_id。
+	// 经典 bthosts：type == 1 是套餐开通，带 plans_id；sort_id 与参考实现一致仍下发。
 	if configString(cfg, "type") == "1" {
 		if pid := configString(cfg, "plans_id"); pid != "" {
 			form.Set("plans_id", pid)
+		}
+		if sid := configString(cfg, "sort_id"); sid != "" {
+			form.Set("sort_id", sid)
 		}
 		return form
 	}
