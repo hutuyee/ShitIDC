@@ -967,7 +967,7 @@ CBAP 仓库 `plugins/addon/` 下 30 个 zip 经逐个检查：**包内全部 `.p
 | ClientCustomField | 客户自定义字段（管理列表/申请） | 已对齐（§10.19） |
 | CostPay | 支出记录：来源/主体/金额/日期 | 已对齐（§10.17） |
 | CreditLimit | 授信：消费记录、混合支付 | 已对齐（授信账户 + 后台授信管理） |
-| CycleArtificialOrder | 人工订单：调价、批量、子项调价 | 未落地 |
+| CycleArtificialOrder | 人工订单：调价、批量、子项调价 | 已对齐（§10.23） |
 | EContract | 电子合同：模板/签署/邮寄 | 未落地（§10.13 已声明跳过） |
 | EmailNoticeAdmin | 管理员邮件通知：接口+模板+收件人 | 部分（邮件通道/模板已有；事件通知管理员未落地） |
 | EventPromotion | 促销：满减/百分比、时间窗 | 已对齐（§10.22） |
@@ -1160,5 +1160,30 @@ CBAP 包 `addon/EventPromotion.zip` 的 PHP（controller/model/validate）全部
 - single_user_once 按「该用户名下存在非取消订单且命中过该活动」判断，下单即占用（与站内优惠券 / 代金券「下单即核销」一致）；
 - 续费 / 升降级订单不参与活动（活动作用于商品购买；插件契约中的参与产品 / 周期均指购买场景）；
 - cycle 的 annually 归一为站内 yearly，对外仍按站内取值返回。
+
+验证：`gofmt` / `go build ./...` / `go vet` / `vue-tsc --noEmit`。
+
+### 10.23 CycleArtificialOrder 插件（周期人工订单）（本轮补齐）
+
+CBAP 包 `addon/CycleArtificialOrder.zip` 的 PHP（controller/model/validate/auth/route）全部 ionCube 加密，前端 `template/admin/index.html`、`cycle_order_details.html`、`api/cycle_order.js`、`js/cycle_order*.js`、`lang/zh-cn.js` 可读，接口与字段面取自这些文件。
+
+| 维度 | 参考实现（插件前端契约） | ShitIDC 落地 |
+|---|---|---|
+| 生成规则字段 | client_id、description（订单描述）、amount（订单金额）、renew_amount（续费金额）、start_time/end_time（Unix 秒，结束可空）、num + unit（day/month/year，正整数） | `cycle_artificial_orders` 表（037 迁移）同名字段；金额落「分」、时间落 TIMESTAMPTZ（对外回 Unix 秒）；`next_generate_at` / `last_generated_at` / `generated_count` 记录进度 |
+| 接口 | GET/POST /cycle_artificial_order、GET/PUT/DELETE /cycle_artificial_order/:id（详情子订单支持 keywords/page/limit/orderby/sort/type/gateway/status/amount/start_time/end_time） | `/admin/cycle-artificial-orders*` 同名语义（cycle_order.manage + CSRF + 审计）；详情返回 `{list, count, cycle_order}`，支持状态 / 支付方式 / 金额 / 时间范围筛选与 id / amount / create_time 排序 |
+| 生成逻辑 | 到点自动生成人工订单；首次按订单金额、之后按续费金额 | 调度器每 10 分钟扫描到期规则（Redis 锁 + 行级 FOR UPDATE，幂等），为每个到期周期生成一笔 `kind='artificial'` 订单（订单 + 明细 + 未支付账单），订单 created_at 落在周期时点上；单轮每规则最多补 30 笔，防止改短周期后刷单 |
+| 变更周期 | 变更生成周期后，从最近一次已生成订单的日期开始计算（cycle_tip1） | 修改规则时按 `last_generated_at + num/unit` 重算 `next_generate_at`，超出结束时间则置空停止生成 |
+| 子订单操作 | 调整价格（订单 / 子项）、标记支付（可勾选「优先扣除余额」）、删除（可勾选连带删除产品）、批量删除 | 调价：`PUT /admin/artificial-orders/:id/price`（同步订单 / 明细 / 未支付账单）；标记支付：`POST /admin/artificial-orders/:id/mark-paid`（优先扣余额，余额不足扣可用部分、余下记为线下收款，订单直接完成）；删除 / 批量删除：未支付订单作废（订单 cancelled + 账单 void），已支付订单需走退款 |
+| 支付收尾 | 人工订单付款后由管理员线下处理 | `kind='artificial'` 的订单支付 / 标记支付后只置 completed + 账单 Paid，不开通服务、不入开通队列；超时自动取消（scheduler order-expire）明确跳过人工订单 |
+| 时间范围展示 | start - end（空显示 ∞） | 同（列表中结束时间为空显示 ∞） |
+| 后台页面 | 插件自带管理页：列表 + 详情（按用户展开子订单） | `/admin/cycle-orders`：规则列表（关键词 / 分页 / 新增 / 编辑 / 删除）+ 详情弹窗（筛选、批量删除、调价、标记支付），侧栏权限 `cycle_order.manage` |
+
+口径说明（加密代码无法比对，按可见契约的最保守解释）：
+
+- 「续费金额」用于第二次及以后周期生成的订单；为 0 时退回订单金额（插件只给出「订单金额 / 续费金额」两列与「首次 / 续费」语境）；
+- 人工订单没有商品：`order_items.product_id` 允许 NULL，明细行承载描述与金额；因为不存在服务，插件的「删除订单同时删除产品」选项在站内无对应动作（删除即作废未支付订单）；
+- 037 迁移同时把 `orders.kind` CHECK 放开到 `('new','renewal','upgrade','artificial')`——此前 `store_upgrades.go` 写入的升级订单会被旧约束拒绝，属既有隐性缺陷，本轮一并修复；
+- 生成规则删除后子订单保留（关联置空），订单 / 账单 / 支付记录不物理删除；
+- 站内人工订单固定以 CNY 记账（与站点主币种一致），金额前缀沿用 ¥。
 
 验证：`gofmt` / `go build ./...` / `go vet` / `vue-tsc --noEmit`。
