@@ -970,7 +970,7 @@ CBAP 仓库 `plugins/addon/` 下 30 个 zip 经逐个检查：**包内全部 `.p
 | CycleArtificialOrder | 人工订单：调价、批量、子项调价 | 未落地 |
 | EContract | 电子合同：模板/签署/邮寄 | 未落地（§10.13 已声明跳过） |
 | EmailNoticeAdmin | 管理员邮件通知：接口+模板+收件人 | 部分（邮件通道/模板已有；事件通知管理员未落地） |
-| EventPromotion | 促销：满减/百分比、时间窗 | 未落地 |
+| EventPromotion | 促销：满减/百分比、时间窗 | 已对齐（§10.22） |
 | FlowPacket | 流量包管理 | 未落地 |
 | HostTransfer | 主机转移 | 未落地 |
 | IdcsmartClientLevel | 客户等级：三级、商品可选、批量保存 | 已对齐（客户组差异定价，口径等价） |
@@ -1134,5 +1134,31 @@ CBAP 包 `addon/IdcsmartVoucher.zip` 的 PHP 全部 ionCube 加密，前端 `tem
 - 券码限定为 ASCII 大小写字母与数字共 8 位（与插件正则的字符集要求一致）；
 - 服务「续费」的前台按钮是直接下单、未加券码输入框（接口已支持 `voucher_code`，其它入口均可在界面填码）；
 - 退款 / 取消订单不返还代金券（插件可见契约中没有返还逻辑；与站内优惠券口径一致）。
+
+验证：`gofmt` / `go build ./...` / `go vet` / `vue-tsc --noEmit`。
+
+### 10.22 EventPromotion 插件（活动促销）（本轮补齐）
+
+CBAP 包 `addon/EventPromotion.zip` 的 PHP（controller/model/validate）全部 ionCube 加密，前端 `template/admin/api/index.js`、`js/index.js`、`js/event_detail.js`、`event_detail.html`、`index.html`、`lang/zh-cn.js` 可读，接口与字段面取自这些文件（包内 README.md 只标注「插件样式Demo」，不影响前端契约的完整度）。
+
+| 维度 | 参考实现（插件前端契约） | ShitIDC 落地 |
+|---|---|---|
+| 活动字段 | name、start_time/end_time（Unix 秒）、type（percent/reduce）、value（percent 为 0~100 比例 / reduce 为优惠金额）、full（满减达标金额）、products[]、clients[]（client_type all/appoint）、new_user、old_user、single_user_once、cycle_limit + cycle[]、notes | `promotions` 表（036 迁移）同名字段；金额落「分」、比例落基点（9.5% => 950）；`orders.promotion_id` 记录命中的活动 |
+| 接口 | GET/POST /event_promotion、GET/PUT/DELETE /event_promotion/:id、PUT /:id/status（1 启用 / 0 停用）、GET /event_promotion/active、PUT /event_promotion/order、PUT /event_promotion/config | `/admin/promotions*` 同名语义（promotion.manage + CSRF + 审计）；列表返回 `{list, count}`、详情返回 `{event_promotion}`、active 返回 `{list, addon_event_promotion_does_not_participate}` |
+| 生效方式 | 满足条件的订单自动享受折扣（无需填码）；同一订单按排序取第一个命中活动 | `promotionDiscountTx` 在下单事务内按 `sort_order, id` 逐个匹配：商品 / 周期 / 指定用户 / 新老客 / 单用户一次，命中即抵扣；单品下单与购物车结算（每条明细各自成单）都生效；优惠券、代金券在其后依次叠加 |
+| 状态 | Suspended / Active / Expiration / Pending | 同四态（停用 / 待生效 / 已失效 / 启用中），由启停与时间窗实时计算 |
+| 排序 | 置顶 / 置底后保存（数组顺序） | `/admin/promotions/order` 保存 `id[]` 顺序 → `sort_order`；后台「排序 / 配置」弹窗提供置顶 / 上移 / 下移 / 置底 |
+| 配置 | addon_event_promotion_does_not_participate | 存入 `system_settings.event_promotion` 并原样返回；站内商品配置暂无「不参与活动」选项的消费入口（已知差异） |
+| 后台页面 | 插件自带管理页（列表 / 详情页分离） | `/admin/promotions`：筛选（关键词 / 状态 / 时间点）、分页、新建 / 编辑弹窗（含快速选择时长、搜索多选指定用户）、启停、删除、排序 / 配置弹窗 |
+| 前台 | clientarea（加密） | 商品页展示活动角标与购买弹窗提示；折扣金额在结算时由服务端计算（下单自动生效，无需填码） |
+
+口径说明（加密代码无法比对，按可见契约的最保守解释）：
+
+- 抵扣基数与优惠券一致：商品折后小计（含配置加价与初装费，不重复扣组折扣）；percent 按比例减免，reduce 需达标 `full` 才减 `value`，抵扣不超过基数；
+- 单笔订单只应用一个活动（排序最靠前且命中者），活动之间不叠加——这也是插件排序 UI（置顶 / 置底）存在的意义；
+- new_user = 没有已支付订单的用户；old_user = 至少有一笔已支付订单的用户（插件语言包「必须有一个已核验通过的订单」）；两个开关同时开启视为两类用户都可参与，都关闭为不限；
+- single_user_once 按「该用户名下存在非取消订单且命中过该活动」判断，下单即占用（与站内优惠券 / 代金券「下单即核销」一致）；
+- 续费 / 升降级订单不参与活动（活动作用于商品购买；插件契约中的参与产品 / 周期均指购买场景）；
+- cycle 的 annually 归一为站内 yearly，对外仍按站内取值返回。
 
 验证：`gofmt` / `go build ./...` / `go vet` / `vue-tsc --noEmit`。
