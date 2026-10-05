@@ -785,3 +785,14 @@ AppSecretKey）进加密凭据，其余进普通配置。
 
 迁移：migrations/026_certification_provider_ref.sql（certifications 表加 provider_ref / provider_url 两列，默认空串，存量记录不受影响）。 |
 
+### 10.6 实名核验通道补齐（二）：涪擎与 E证通（本轮补齐）
+
+§10.5 之后复查 CBAP 插件包，certification 类目还剩两个明文插件，补齐后该类目可读插件全部对齐：
+
+| 通道 | 协议 | 关键点 |
+|---|---|---|
+| `fuplusx` 涪擎实名认证（高级版） | GET {base}{path}，APPCODE；默认 fephone.market.alicloudapi.com | 一个通道按 type 覆盖二/三/四要素：/IDCard、/bankCheck、/phoneCheck、/bankCheck4；判据 status=="01"，traceId 作为凭证；参考实现的 type=4 不收集手机号（从认证记录里取），本系统没有这条来源，type=4 一并把手机号声明为必填扩展字段 |
+| `yerzt` E证通人脸认证 | faceid.tencentcloudapi.com，TC3-HMAC-SHA256 | GetEidToken → EidToken/扫码地址（Url 做 htmlspecialchars_decode）→ CheckEidTokenStatus（timeout 保持处理中）→ GetEidResult，Text.ErrCode==0 通过；与插件的差异：插件把 Text.ErrCode!=0 也当「尚未通过」无限轮询，本实现按已出结果判失败，用户可直接重新提交；input_type 缺省 3（提交前已收集姓名与证件号，扫码端无需 OCR） |
+
+两个通道复用既有基础设施（云市场错误翻译 / internal/tc3），后台「实名核验通道」面板按通道渲染对应字段。至此魔方参考源 certification 类目里协议可读的插件（alitwo / ali / idcsmartali / wechat / threehc / phonethree / fuplusx / yerzt）全部在 ShitIDC 有对应的 Go 实现。
+
