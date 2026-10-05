@@ -77,6 +77,19 @@ const CERT_FIELD_SPECS: Record<string, FieldSpec[]> = {
     { key: 'secret_id', label: '腾讯云 SecretId', secret: true },
     { key: 'secret_key', label: '腾讯云 SecretKey', secret: true },
   ],
+  fuplusx: [
+    { key: 'type', label: '要素类型：2=二要素 / 3=银行卡三要素 / 4=手机三要素 / 5=银行卡四要素（默认 2）', optional: true },
+    { key: 'endpoint', label: '接口地址（默认 fephone.market.alicloudapi.com）', optional: true },
+    { key: 'app_code', label: 'AppCode（云市场授权码）', secret: true },
+  ],
+  yerzt: [
+    { key: 'merchant_id', label: 'E证通 MerchantId（商户号）' },
+    { key: 'input_type', label: '认证方式：1=正反面OCR / 2=正面OCR / 3=手动输入 / 4=后台自动提交（默认 3）', optional: true },
+    { key: 'endpoint', label: '接口域名（默认 faceid.tencentcloudapi.com）', optional: true },
+    { key: 'return_url', label: '认证完成后跳回地址', optional: true },
+    { key: 'secret_id', label: '腾讯云 SecretId', secret: true },
+    { key: 'secret_key', label: '腾讯云 SecretKey', secret: true },
+  ],
 }
 const certProviders = ref<any[]>([])
 const certAvailable = ref<string[]>([])
@@ -88,6 +101,8 @@ const certChannelLabels: Record<string, string> = {
   ali: '支付宝芝麻认证', idcsmartali: '智简魔方芝麻信用',
   threehc: '银行卡要素核验（二/三/四要素）', phonethree: '手机号要素核验',
   wechat: '腾讯云人脸核身（微信）',
+  fuplusx: '涪擎实名认证（高级版）',
+  yerzt: 'E证通人脸认证',
 }
 const certFieldSpecs = () => CERT_FIELD_SPECS[certForm.provider] || []
 function pickCertProvider(p: string) {
