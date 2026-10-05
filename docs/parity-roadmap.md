@@ -984,11 +984,11 @@ CBAP 仓库 `plugins/addon/` 下 30 个 zip 经逐个检查：**包内全部 `.p
 | ManualResource | 手动资源：供应商、noVNC 控制台 | 未落地 |
 | NoticeSendMerge | 通知合并发送 | 未落地 |
 | ProductCashback | 商品返现 | 已对齐（§10.16） |
-| ProductCertLimit | 产品实名限制 | 未落地 |
-| ProductCycleLimit | 购买周期限制 | 未落地 |
+| ProductCertLimit | 产品实名限制 | 已对齐（§10.20） |
+| ProductCycleLimit | 购买周期限制 | 已对齐（§10.20） |
 | ProductDropDownSelect | 商品下拉选择（线索不足） | 未落地（前端仅「商品选择」） |
-| ProductNumLimit | 购买数量限制 | 未落地 |
-| ProductRelatedLimit | 关联购买限制 | 未落地 |
+| ProductNumLimit | 购买数量限制 | 已对齐（商品自带单客户限购） |
+| ProductRelatedLimit | 关联购买限制 | 已对齐（§10.20） |
 | TicketInternalPremium | 工单内部备注/内部工单 | 未落地 |
 | TicketPremium | 工单高级版（部门/字段/回执模板） | 部分（基础工单已有） |
 | WanyunResource | 万云资源：自定义字段、节点 | 未落地 |
@@ -1088,5 +1088,27 @@ CBAP 包 `addon/ClientCustomField.zip` 的 PHP（controller/model/validate/route
 - password 读取只回传 has_value（是否已设置），保存空值保持原值；其余类型未提供的字段视为清空；
 - 管理员专用字段不参与用户自助填写与注册，也不在 checkout 门禁范围内；
 - 插件后台列表支持 keywords / 分页，本站字段数量少，一次全量返回（表格不做分页）。
+
+验证：`gofmt` / `go build ./...` / `go vet` / `vue-tsc --noEmit`。
+
+### 10.20 ProductCertLimit / ProductCycleLimit / ProductRelatedLimit 插件（商品购买限制）（本轮补齐）
+
+CBAP 包 `addon/Product{Cert,Cycle,Related}Limit.zip` 的 PHP 全部 ionCube 加密，前端 `template/admin/api/index.js`、`js/index.js`、`index.html`、`lang/zh-cn.js` 可读。四个 Product*Limit 插件中，ProductNumLimit 与站内商品自带能力等价，本轮落地其余三个（合并为一个后台页 / 三张表）。
+
+| 维度 | 参考实现（插件前端契约） | ShitIDC 落地 |
+|---|---|---|
+| 实名要求 | product_id + type（1 个人/企业、2 个人认证、3 企业认证），列表 / 新增 / 编辑 / 启停 / 删除 | `product_cert_limits` 表（034 迁移），同一商品一条；下单时校验 `certifications.status='approved'`。本站实名为统一类型，三种 type 都按「已通过实名」校验（页面已注明） |
+| 周期性限购 | product_id + num + cycle（天，0=永久）；周期开始时间以用户未在限制内下的第一单时间为准；修改周期影响正在限制中的周期 | `product_cycle_limits` 表；下单时按服务 created_at 逐段模拟周期窗口计数，已用数量 + 本次数量 > num 即拦截 |
+| 关联限购 | product_id + related_product_id[] + type（0 捆绑 / 1 必需 / 2 互斥；插件前端仅开放「捆绑」，语言包给出三种语义） | `product_related_limits` 表（related_product_ids BIGINT[]）；捆绑 = 同批结算必须包含全部关联商品（单品下单明确提示走购物车一起结算）；必需 = 已拥有激活中的关联商品（任一）；互斥 = 不得拥有激活中的关联商品；续费时校验必需 / 互斥 |
+| 数量限制 | ProductNumLimit：product_id + num，账户内该商品最大数量，已删除 / 已取消不计数 | 站内商品自带 `products.max_per_customer`（后台「商品与分组」的「单客户最多购买」，0=不限），计数口径一致（terminated / failed 不计数），视为已对齐，不重复建表 |
+| 接口 | GET/POST /product_{cert,cycle,related}_limit、PUT /{id}、PUT /{id}/status、DELETE /{id} | `/admin/product-{cert,cycle,related}-limits` 同名语义（product.write + CSRF + 审计） |
+| 后台页面 | 插件各自带管理页 | `/admin/product-limits` 三个页签：实名要求 / 周期性限购 / 关联限购，共用商品选择 |
+
+口径说明（加密代码无法比对，按可见契约的最保守解释）：
+
+- 数量与周期限制在**下单时**校验，且所有下单入口（单品下单 / 购物车 / 后付费 / 上下游兼容接口）共用同一事务内校验点；账户中的服务（含开通中、已暂停等状态）均计数，仅 terminated / failed 不计数，与插件「已删除 / 已取消不计数」一致；
+- 捆绑在整车维度校验：同一结算批次即视为「同时购买」；单服务续费无法在同一单里续费关联商品，续费只校验必需 / 互斥，捆绑仅购买时校验（已知差异）；
+- 插件对退款的联动（捆绑商品退款同步退款）站内未做跨订单联动：站内退款按订单退回原支付渠道（已知差异）；
+- 插件 type 1/2/3 的「个人 / 企业」区分在本站实名体系中不存在，统一按已实名处理。
 
 验证：`gofmt` / `go build ./...` / `go vet` / `vue-tsc --noEmit`。
