@@ -647,7 +647,7 @@ func (s *Store) invoiceOrdersForApply(ctx context.Context, q rowQuerier, userID 
 		return 0, nil, nil, "", errors.New("一次最多为 50 笔订单申请发票")
 	}
 	rows, err := q.Query(ctx, `SELECT o.id,o.public_id::text,o.status,o.total_cents,o.currency,o.created_at,o.kind_detail
-FROM orders o WHERE o.public_id=ANY($1) AND o.user_id=$2`, ids, userID)
+FROM orders o WHERE o.public_id::text=ANY($1) AND o.user_id=$2`, ids, userID)
 	if err != nil {
 		return 0, nil, nil, "", err
 	}
@@ -833,6 +833,7 @@ type InvoiceRequest struct {
 	FeeOrderID       string                `json:"fee_order_id"`
 	FeeOrderStatus   string                `json:"fee_order_status"`
 	ParcelNumber     string                `json:"parcel_number"`
+	ParcelImage      string                `json:"parcel_image"`
 	ReviewNotes      string                `json:"review_notes"`
 	RejectReason     string                `json:"reject_reason"`
 	InvoiceFilename  string                `json:"invoice_filename"`
@@ -847,7 +848,7 @@ const invoiceRequestSelect = `SELECT r.public_id::text,r.status,r.title_type,r.t
 r.rec_type,r.rec_name,r.rec_address,r.rec_phone,r.rec_email,r.rec_url,r.invoice_format,r.invoice_project,
 r.tax_rate_bp,r.tax_fee_bp,r.amount_cents,r.tax_cents,r.parcel_name,r.parcel_price_cents,r.total_cents,r.fee_cents,
 COALESCE(fo.public_id::text,''),COALESCE(fo.status,''),
-r.parcel_number,r.review_notes,r.reject_reason,r.invoice_filename,r.sent_at,r.flushed_at,r.created_at,
+r.parcel_number,r.parcel_image,r.review_notes,r.reject_reason,r.invoice_filename,r.sent_at,r.flushed_at,r.created_at,
 u.public_id::text,u.email,
 COALESCE((SELECT json_agg(json_build_object('id',o.public_id::text,'status',o.status,'total_cents',o.total_cents,'currency',o.currency,'created_at',o.created_at,
 'items',COALESCE((SELECT json_agg(json_build_object('product_name',oi.product_name,'billing_cycle',oi.billing_cycle,'unit_price_cents',oi.unit_price_cents,'quantity',oi.quantity,'subtotal_cents',oi.subtotal_cents) ORDER BY oi.id) FROM order_items oi WHERE oi.order_id=o.id),'[]'::json)) ORDER BY o.id)
@@ -862,7 +863,7 @@ func scanInvoiceRequest(row pgx.Row) (InvoiceRequest, error) {
 		&v.RecType, &v.RecName, &v.RecAddress, &v.RecPhone, &v.RecEmail, &v.RecURL, &v.InvoiceFormat, &v.InvoiceProject,
 		&taxRateBp, &taxFeeBp, &v.AmountCents, &v.TaxCents, &v.ParcelName, &v.ParcelPriceCents, &v.TotalCents, &v.FeeCents,
 		&v.FeeOrderID, &v.FeeOrderStatus,
-		&v.ParcelNumber, &v.ReviewNotes, &v.RejectReason, &v.InvoiceFilename, &v.SentAt, &v.FlushedAt, &v.CreatedAt,
+		&v.ParcelNumber, &v.ParcelImage, &v.ReviewNotes, &v.RejectReason, &v.InvoiceFilename, &v.SentAt, &v.FlushedAt, &v.CreatedAt,
 		&v.UserID, &v.UserEmail, &orders)
 	if err != nil {
 		return v, err
@@ -1185,8 +1186,8 @@ func (s *Store) RejectInvoiceRequest(ctx context.Context, publicID, reason strin
 }
 
 // SendInvoiceRequest 后台发出：wait_send → sent。
-// 纸质发票需填快递单号；电子发票需先上传发票文件。
-func (s *Store) SendInvoiceRequest(ctx context.Context, publicID, parcelNumber string) error {
+// 纸质发票需填快递单号（可附快递单照片）；电子发票需先上传发票文件。
+func (s *Store) SendInvoiceRequest(ctx context.Context, publicID, parcelNumber, parcelImage string) error {
 	tx, err := s.DB.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
 	if err != nil {
 		return err
@@ -1212,7 +1213,7 @@ func (s *Store) SendInvoiceRequest(ctx context.Context, publicID, parcelNumber s
 	if recType == "email" && strings.TrimSpace(filename) == "" {
 		return errors.New("请先上传发票文件")
 	}
-	if _, err := tx.Exec(ctx, `UPDATE invoice_requests SET status='sent',parcel_number=$2,sent_at=now(),updated_at=now() WHERE id=$1`, requestID, parcelNumber); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE invoice_requests SET status='sent',parcel_number=$2,parcel_image=$3,sent_at=now(),updated_at=now() WHERE id=$1`, requestID, parcelNumber, strings.TrimSpace(parcelImage)); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
@@ -1287,4 +1288,100 @@ func advanceInvoiceFeeOrderTx(ctx context.Context, tx pgx.Tx, orderID int64) err
 	}
 	_, err := tx.Exec(ctx, `UPDATE invoice_requests SET status='pending',updated_at=now() WHERE fee_order_id=$1 AND status='unpaid'`, orderID)
 	return err
+}
+
+// ---- 后台抬头 / 地址（对齐插件后台 GET /invoice_title、/invoice_address） ----
+
+// AdminInvoiceTitleRow 是后台抬头列表行（含用户邮箱）。
+type AdminInvoiceTitleRow struct {
+	InvoiceTitle
+	UserEmail string `json:"user_email"`
+}
+
+// ListAllInvoiceTitles 后台查看全部抬头（关键字匹配抬头 / 邮箱），最新在前。
+func (s *Store) ListAllInvoiceTitles(ctx context.Context, keyword string, limit int) ([]AdminInvoiceTitleRow, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	args := []any{}
+	where := ""
+	if keyword = strings.TrimSpace(keyword); keyword != "" {
+		args = append(args, "%"+keyword+"%")
+		where = fmt.Sprintf(" WHERE t.title ILIKE $%d OR u.email ILIKE $%d", len(args), len(args))
+	}
+	args = append(args, limit)
+	rows, err := s.DB.Query(ctx, `SELECT t.public_id::text,t.title_type,t.title,t.invoice_type,t.company_address,t.tax,t.bank,t.bank_user,t.created_at,u.email
+FROM invoice_titles t JOIN users u ON u.id=t.user_id`+where+fmt.Sprintf(` ORDER BY t.id DESC LIMIT $%d`, len(args)), args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []AdminInvoiceTitleRow{}
+	for rows.Next() {
+		var v AdminInvoiceTitleRow
+		if err := rows.Scan(&v.ID, &v.TitleType, &v.Title, &v.InvoiceType, &v.CompanyAddress, &v.Tax, &v.Bank, &v.BankUser, &v.CreatedAt, &v.UserEmail); err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
+// DeleteInvoiceTitles 后台批量删除抬头，返回实际删除数。
+func (s *Store) DeleteInvoiceTitles(ctx context.Context, publicIDs []string) (int, error) {
+	if len(publicIDs) == 0 {
+		return 0, nil
+	}
+	tag, err := s.DB.Exec(ctx, `DELETE FROM invoice_titles WHERE public_id::text=ANY($1)`, publicIDs)
+	if err != nil {
+		return 0, err
+	}
+	return int(tag.RowsAffected()), nil
+}
+
+// AdminInvoiceAddressRow 是后台地址列表行（含用户邮箱）。
+type AdminInvoiceAddressRow struct {
+	InvoiceAddress
+	UserEmail string `json:"user_email"`
+}
+
+// ListAllInvoiceAddresses 后台查看全部收件地址（关键字匹配收件人 / 邮箱），最新在前。
+func (s *Store) ListAllInvoiceAddresses(ctx context.Context, keyword string, limit int) ([]AdminInvoiceAddressRow, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	args := []any{}
+	where := ""
+	if keyword = strings.TrimSpace(keyword); keyword != "" {
+		args = append(args, "%"+keyword+"%")
+		where = fmt.Sprintf(" WHERE a.rec_name ILIKE $%d OR u.email ILIKE $%d", len(args), len(args))
+	}
+	args = append(args, limit)
+	rows, err := s.DB.Query(ctx, `SELECT a.public_id::text,a.rec_type,a.rec_name,a.province,a.city,a.region,a.address,a.phone,a.is_default,a.email,a.rec_url,a.notes,a.created_at,u.email
+FROM invoice_addresses a JOIN users u ON u.id=a.user_id`+where+fmt.Sprintf(` ORDER BY a.id DESC LIMIT $%d`, len(args)), args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []AdminInvoiceAddressRow{}
+	for rows.Next() {
+		var v AdminInvoiceAddressRow
+		if err := rows.Scan(&v.ID, &v.RecType, &v.RecName, &v.Province, &v.City, &v.Region, &v.Address, &v.Phone, &v.IsDefault, &v.Email, &v.RecURL, &v.Notes, &v.CreatedAt, &v.UserEmail); err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
+// DeleteInvoiceAddresses 后台批量删除收件地址，返回实际删除数。
+func (s *Store) DeleteInvoiceAddresses(ctx context.Context, publicIDs []string) (int, error) {
+	if len(publicIDs) == 0 {
+		return 0, nil
+	}
+	tag, err := s.DB.Exec(ctx, `DELETE FROM invoice_addresses WHERE public_id::text=ANY($1)`, publicIDs)
+	if err != nil {
+		return 0, err
+	}
+	return int(tag.RowsAffected()), nil
 }
