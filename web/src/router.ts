@@ -25,6 +25,11 @@ import AdminServices from './views/AdminServices.vue'
 import AdminServiceTransfers from './views/AdminServiceTransfers.vue'
 import AdminFlowPackets from './views/AdminFlowPackets.vue'
 import AdminClientCare from './views/AdminClientCare.vue'
+import AdminTicketInternal from './views/AdminTicketInternal.vue'
+import AdminTicketInternalDetail from './views/AdminTicketInternalDetail.vue'
+import AdminTicketInternalSettings from './views/AdminTicketInternalSettings.vue'
+import AdminTicketInternalCron from './views/AdminTicketInternalCron.vue'
+import AdminTicketInternalStats from './views/AdminTicketInternalStats.vue'
 import AdminUsers from './views/AdminUsers.vue'
 import AdminTickets from './views/AdminTickets.vue'
 import AdminLogs from './views/AdminLogs.vue'
@@ -101,6 +106,11 @@ const router = createRouter({ history: createWebHistory(), routes: [
   { path: ADMIN_PATH + '/service-transfers', component: AdminServiceTransfers },
   { path: ADMIN_PATH + '/flow-packets', component: AdminFlowPackets },
   { path: ADMIN_PATH + '/client-care', component: AdminClientCare },
+  { path: ADMIN_PATH + '/ticket-internal', component: AdminTicketInternal },
+  { path: ADMIN_PATH + '/ticket-internal/settings', component: AdminTicketInternalSettings },
+  { path: ADMIN_PATH + '/ticket-internal/cron', component: AdminTicketInternalCron },
+  { path: ADMIN_PATH + '/ticket-internal/stats', component: AdminTicketInternalStats },
+  { path: ADMIN_PATH + '/ticket-internal/:id', component: AdminTicketInternalDetail },
   { path: ADMIN_PATH + '/users', component: AdminUsers },
   { path: ADMIN_PATH + '/tickets', component: AdminTickets },
   { path: ADMIN_PATH + '/logs', component: AdminLogs },
