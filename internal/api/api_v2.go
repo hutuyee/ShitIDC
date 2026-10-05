@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"mime/multipart"
 	"net/http"
 	"os"
@@ -374,7 +375,21 @@ func (a *App) uploadTicketAttachment(c *gin.Context) {
 		httpx.Fail(c, 500, "INTERNAL_ERROR", "附件保存失败")
 		return
 	}
-	att, err := a.Store.InsertAttachment(c, ticketID, p.User.ID, filepath.Base(fileHeader.Filename), stored, ext, int64(len(content)))
+	// 配了对象存储通道就把附件转存过去：成功后删本机文件，入库记 oss: 前缀。
+	storedRef := stored
+	if target, oerr := a.activeOSSTarget(c); oerr == nil && target != nil {
+		key := "uploads/tickets/" + ticketID + "/" + stored
+		acl := "private"
+		switch ext {
+		case ".png", ".jpg", ".jpeg", ".webp", ".gif", ".pdf":
+			acl = "public-read"
+		}
+		if uerr := target.impl.Upload(c, target.cfg, target.secret, key, content, mime.TypeByExtension(ext), acl); uerr == nil {
+			_ = os.Remove(full)
+			storedRef = "oss:" + key
+		}
+	}
+	att, err := a.Store.InsertAttachment(c, ticketID, p.User.ID, filepath.Base(fileHeader.Filename), storedRef, ext, int64(len(content)))
 	if err != nil {
 		_ = os.Remove(full)
 		httpx.Fail(c, 400, "ATTACHMENT_FAILED", err.Error())
@@ -392,6 +407,22 @@ func (a *App) downloadAttachment(c *gin.Context) {
 	att, storedPath, err := a.Store.GetAttachmentForRead(c, userID, c.Param("id"))
 	if err != nil {
 		httpx.Fail(c, 404, "ATTACHMENT_NOT_FOUND", "附件不存在")
+		return
+	}
+	// 对象存储附件：302 到 3 分钟有效的签名地址。
+	if strings.HasPrefix(storedPath, "oss:") {
+		key := strings.TrimPrefix(storedPath, "oss:")
+		target, oerr := a.activeOSSTarget(c)
+		if oerr != nil || target == nil {
+			httpx.Fail(c, 502, "ATTACHMENT_UNAVAILABLE", "对象存储通道不可用")
+			return
+		}
+		signed, serr := target.impl.SignedURL(c, target.cfg, target.secret, key, 3*time.Minute)
+		if serr != nil {
+			httpx.Fail(c, 502, "ATTACHMENT_UNAVAILABLE", "生成下载地址失败")
+			return
+		}
+		c.Redirect(http.StatusFound, signed)
 		return
 	}
 	full := filepath.Join(a.Cfg.Storage.Dir, "uploads", "tickets", att.TicketID, storedPath)
