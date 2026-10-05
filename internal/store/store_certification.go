@@ -420,3 +420,12 @@ func (s *Store) SetCertificationProviderDefault(ctx context.Context, publicID st
 	}
 	return tx.Commit(ctx)
 }
+
+// CountPendingCertifications 统计等待人工审核的实名记录（对应魔方待办事项
+// widget/ToDo 的「实名认证」项）。扫码轮询中的记录（provider_url 非空）由
+// 轮询自动出结果，不计入人工待办。
+func (s *Store) CountPendingCertifications(ctx context.Context) (int64, error) {
+	var n int64
+	err := s.DB.QueryRow(ctx, `SELECT count(*) FROM certifications WHERE status='pending' AND COALESCE(provider_url,'')=''`).Scan(&n)
+	return n, err
+}

@@ -244,6 +244,8 @@ func (a *App) registerAdminRoutes(g *gin.RouterGroup) {
 	g.GET("/users", a.require("user.read"), a.adminListUsers)
 	// 统一搜索：后台选用户/商品/服务/订单都用它，不必手抄 UUID。
 	g.GET("/search", a.require("user.read"), a.adminSearch)
+	// 管理端待办事项（对应魔方 widget/ToDo 插件）：按权限返回待处理工单 / 待审实名 / 开通中服务数量。
+	g.GET("/todos", a.adminTodos)
 	// 用户详情聚合：一次拿到余额、机器、订单、授信，供「点开用户」抽屉使用。
 	g.GET("/users/:id/detail", a.require("user.read"), a.adminUserDetail)
 	g.GET("/tickets", a.require("ticket.manage"), a.adminListTickets)

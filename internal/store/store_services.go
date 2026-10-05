@@ -252,3 +252,11 @@ WHERE ($1='' OR s.status=$1) ORDER BY s.created_at DESC LIMIT $2`, status, limit
 	}
 	return out, rows.Err()
 }
+
+// CountProvisioningServices 统计尚未开通完成的服务（等待入队 + 开通中），
+// 对应魔方待办事项 widget/ToDo 的「开通中产品数量」。
+func (s *Store) CountProvisioningServices(ctx context.Context) (int64, error) {
+	var n int64
+	err := s.DB.QueryRow(ctx, `SELECT count(*) FROM services WHERE status IN ('pending','provisioning')`).Scan(&n)
+	return n, err
+}

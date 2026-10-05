@@ -367,3 +367,44 @@ func (a *App) adminUserProfile(c *gin.Context) {
 	}
 	httpx.OK(c, 200, map[string]any{"user": u, "profile": profile, "unmasked": full})
 }
+
+// adminTodos 汇总管理端待办数量（对应魔方 widget/ToDo 插件）。
+// 每个待办项按对应模块权限过滤：没有该模块权限的管理员看不到该项；
+// 三项权限都没有时返回 403。
+func (a *App) adminTodos(c *gin.Context) {
+	p, ok := getPrincipal(c)
+	if !ok {
+		httpx.Fail(c, 401, "UNAUTHORIZED", "请先登录")
+		return
+	}
+	out := map[string]any{}
+	if p.Permissions["ticket.manage"] {
+		n, err := a.Store.CountOpenTickets(c)
+		if err != nil {
+			httpx.Fail(c, 500, "INTERNAL_ERROR", "读取待办工单失败")
+			return
+		}
+		out["pending_tickets"] = n
+	}
+	if p.Permissions["user.manage"] {
+		n, err := a.Store.CountPendingCertifications(c)
+		if err != nil {
+			httpx.Fail(c, 500, "INTERNAL_ERROR", "读取待审实名失败")
+			return
+		}
+		out["pending_certifications"] = n
+	}
+	if p.Permissions["service.manage"] {
+		n, err := a.Store.CountProvisioningServices(c)
+		if err != nil {
+			httpx.Fail(c, 500, "INTERNAL_ERROR", "读取开通中服务失败")
+			return
+		}
+		out["pending_services"] = n
+	}
+	if len(out) == 0 {
+		httpx.Fail(c, 403, "FORBIDDEN", "没有权限")
+		return
+	}
+	httpx.OK(c, 200, out)
+}
