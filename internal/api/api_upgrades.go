@@ -67,6 +67,7 @@ func (a *App) requestUpgrade(c *gin.Context) {
 	var in struct {
 		ProductID    string `json:"product_id"`
 		BillingCycle string `json:"billing_cycle"`
+		VoucherCode  string `json:"voucher_code"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
 		httpx.Fail(c, 400, "INVALID_REQUEST", "请求格式错误")
@@ -76,7 +77,7 @@ func (a *App) requestUpgrade(c *gin.Context) {
 		httpx.Fail(c, 400, "INVALID_REQUEST", "请选择目标商品与计费周期")
 		return
 	}
-	quote, orderPublic, err := a.Store.RequestUpgrade(c, p.User.ID, c.Param("id"), in.ProductID, in.BillingCycle)
+	quote, orderPublic, err := a.Store.RequestUpgradeWithVoucher(c, p.User.ID, c.Param("id"), in.ProductID, in.BillingCycle, strings.TrimSpace(in.VoucherCode))
 	switch {
 	case errors.Is(err, store.ErrNotFound):
 		httpx.Fail(c, 404, "UPGRADE_TARGET_NOT_FOUND", "目标商品或周期不存在")

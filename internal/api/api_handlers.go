@@ -89,6 +89,7 @@ func (a *App) createOrder(c *gin.Context) {
 		BillingCycle string               `json:"billing_cycle"`
 		Quantity     int                  `json:"quantity"`
 		CouponCode   string               `json:"coupon_code"`
+		VoucherCode  string               `json:"voucher_code"`
 		Currency     string               `json:"currency"`
 		Config       []store.ConfigChoice `json:"config"`
 		CustomFields map[string]string    `json:"custom_fields"`
@@ -117,6 +118,7 @@ func (a *App) createOrder(c *gin.Context) {
 	o, err := a.Store.CreateOrderInCurrency(c, p.User.ID, in.ProductID, in.BillingCycle, in.Quantity, strings.TrimSpace(in.CouponCode), store.OrderConfigInput{
 		Choices:      in.Config,
 		CustomFields: in.CustomFields,
+		VoucherCode:  strings.TrimSpace(in.VoucherCode),
 	}, strings.ToUpper(strings.TrimSpace(in.Currency)))
 	if err != nil {
 		httpx.Fail(c, 400, "ORDER_CREATE_FAILED", err.Error())

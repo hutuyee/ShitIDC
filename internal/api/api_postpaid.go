@@ -34,6 +34,7 @@ func (a *App) createPostpaidOrder(c *gin.Context) {
 		BillingCycle string               `json:"billing_cycle"`
 		Quantity     int                  `json:"quantity"`
 		CouponCode   string               `json:"coupon_code"`
+		VoucherCode  string               `json:"voucher_code"`
 		Currency     string               `json:"currency"`
 		Config       []store.ConfigChoice `json:"config"`
 		CustomFields map[string]string    `json:"custom_fields"`
@@ -53,7 +54,7 @@ func (a *App) createPostpaidOrder(c *gin.Context) {
 		in.BillingCycle = "monthly"
 	}
 	o, err := a.Store.CreateOrderPostpaid(c, pr.User.ID, in.ProductID, in.BillingCycle, in.Quantity,
-		strings.TrimSpace(in.CouponCode), store.OrderConfigInput{Choices: in.Config, CustomFields: in.CustomFields},
+		strings.TrimSpace(in.CouponCode), store.OrderConfigInput{Choices: in.Config, CustomFields: in.CustomFields, VoucherCode: strings.TrimSpace(in.VoucherCode)},
 		strings.ToUpper(strings.TrimSpace(in.Currency)), true)
 	if err != nil {
 		switch {

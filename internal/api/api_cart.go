@@ -108,7 +108,8 @@ func (a *App) clearCart(c *gin.Context) {
 func (a *App) checkoutCart(c *gin.Context) {
 	pr, _ := getPrincipal(c)
 	var in struct {
-		CouponCode string `json:"coupon_code"`
+		CouponCode  string `json:"coupon_code"`
+		VoucherCode string `json:"voucher_code"`
 	}
 	_ = c.ShouldBindJSON(&in)
 	// 结算前先看整车是否可售：不可售就让用户先清理，而不是建出一批注定失败的订单。
@@ -130,7 +131,7 @@ func (a *App) checkoutCart(c *gin.Context) {
 		httpx.Fail(c, 409, "CART_NOT_PAYABLE", "购物车里有不可售的商品，请先移除")
 		return
 	}
-	res, err := a.Store.CheckoutCart(c, pr.User.ID, strings.TrimSpace(in.CouponCode))
+	res, err := a.Store.CheckoutCartWithVoucher(c, pr.User.ID, strings.TrimSpace(in.CouponCode), strings.TrimSpace(in.VoucherCode))
 	if err != nil {
 		httpx.Fail(c, 400, "CART_CHECKOUT_FAILED", err.Error())
 		return

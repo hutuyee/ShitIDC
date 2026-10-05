@@ -25,7 +25,12 @@ func compatFail(c *gin.Context, status int, msg string) {
 // services; paying it (wallet or online) extends the service's expiry.
 func (a *App) renewService(c *gin.Context) {
 	p, _ := getPrincipal(c)
-	o, err := a.Store.CreateRenewalOrder(c, p.User.ID, c.Param("id"))
+	// 可选代金券：请求体不是必填，没传就按普通续费处理。
+	var in struct {
+		VoucherCode string `json:"voucher_code"`
+	}
+	_ = c.ShouldBindJSON(&in)
+	o, err := a.Store.CreateRenewalOrderWithVoucher(c, p.User.ID, c.Param("id"), strings.TrimSpace(in.VoucherCode))
 	switch {
 	case errors.Is(err, store.ErrNotFound):
 		httpx.Fail(c, 404, "SERVICE_NOT_FOUND", "服务不存在")
