@@ -122,6 +122,8 @@ func NewRouter(a *App) *gin.Engine {
 			authed.GET("/vouchers/claimable", a.require("order.read"), a.claimableVouchers)
 			authed.POST("/vouchers/preview", a.require("order.read"), a.csrf(), a.previewVoucher)
 			authed.POST("/vouchers/:id/claim", a.require("order.read"), a.csrf(), a.claimVoucher)
+			// 活动促销（对齐魔方 EventPromotion 插件）：进行中的活动展示
+			authed.GET("/promotions/active", a.require("order.read"), a.myRunningPromotions)
 			authed.GET("/referral", a.myReferral)
 			authed.GET("/notifications", a.listNotifications)
 			authed.POST("/notifications/:id/read", a.csrf(), a.markNotification)
@@ -381,6 +383,16 @@ func (a *App) registerAdminRoutes(g *gin.RouterGroup) {
 	g.POST("/vouchers/:id/times", a.require("voucher.manage"), a.csrf(), a.adminVoucherTimes)
 	g.POST("/vouchers/:id/send", a.require("voucher.manage"), a.csrf(), a.adminSendVoucher)
 	g.DELETE("/vouchers/record/:id", a.require("voucher.manage"), a.csrf(), a.adminDeleteVoucherRecord)
+	// 活动促销（对齐魔方 EventPromotion 插件；下单时自动生效，无需填码）
+	g.GET("/promotions", a.require("promotion.manage"), a.adminListPromotions)
+	g.GET("/promotions/active", a.require("promotion.manage"), a.adminActivePromotions)
+	g.POST("/promotions", a.require("promotion.manage"), a.csrf(), a.adminCreatePromotion)
+	g.PUT("/promotions/order", a.require("promotion.manage"), a.csrf(), a.adminReorderPromotions)
+	g.PUT("/promotions/config", a.require("promotion.manage"), a.csrf(), a.adminSavePromotionConfig)
+	g.GET("/promotions/:id", a.require("promotion.manage"), a.adminGetPromotion)
+	g.PUT("/promotions/:id", a.require("promotion.manage"), a.csrf(), a.adminUpdatePromotion)
+	g.DELETE("/promotions/:id", a.require("promotion.manage"), a.csrf(), a.adminDeletePromotion)
+	g.PUT("/promotions/:id/status", a.require("promotion.manage"), a.csrf(), a.adminSetPromotionStatus)
 	// 商品返现（对齐魔方 product_cashback 插件；支付成功后返到余额）
 	g.GET("/product-cashbacks", a.require("product.write"), a.adminListProductCashbacks)
 	g.POST("/product-cashbacks", a.require("product.write"), a.csrf(), a.adminCreateProductCashback)
