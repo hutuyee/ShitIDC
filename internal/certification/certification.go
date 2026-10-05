@@ -26,6 +26,16 @@ type Subject struct {
 	IDNumber string
 	// IDType 为 idcard / passport / license。
 	IDType string
+	// Extra 是通道自定义输入（如三要素的银行卡号 bank、手机号 phone）。
+	Extra map[string]string
+}
+
+// ExtraField 安全地取一个自定义输入。
+func (s Subject) ExtraField(key string) string {
+	if s.Extra == nil {
+		return ""
+	}
+	return strings.TrimSpace(s.Extra[key])
 }
 
 // Result 是核验结果。
@@ -37,6 +47,9 @@ type Result struct {
 	BirthDate string
 	// Message 是通道的原文说明，便于排查。
 	Message string
+	// Pending 表示上游「还在处理中」：扫码类通道轮询时靠它区分
+	// 「没出结果」与「出结果但不一致」，避免用户还没扫码就被判失败。
+	Pending bool
 }
 
 // Provider 是一个实名核验通道。
@@ -46,6 +59,40 @@ type Provider interface {
 	Validate(cfg Config, secret Secret) error
 	// Verify 发起核验。返回 Match=false 且 err=nil 表示「查到了但不一致」。
 	Verify(ctx context.Context, cfg Config, secret Secret, subject Subject) (Result, error)
+}
+
+// Challenge 是扫码类通道返回的挑战：用户拿 URL 去支付宝/微信完成认证。
+type Challenge struct {
+	// Provider 是通道标识，前端据此提示用哪个 App 扫码。
+	Provider string `json:"provider"`
+	// Token 是通道凭证（certify_id / BizToken），落库用于后续轮询。
+	Token string `json:"token"`
+	// URL 是认证跳转地址，也是二维码内容。
+	URL string `json:"url"`
+	// Message 是给用户的提示文案。
+	Message string `json:"message"`
+}
+
+// Challenger 是扫码类通道：无法一次同步出结果，需要「初始化拿二维码 + 轮询查询」。
+type Challenger interface {
+	// Challenge 初始化认证并返回二维码/跳转地址。
+	Challenge(ctx context.Context, cfg Config, secret Secret, subject Subject) (Challenge, error)
+	// Query 用 Challenge 返回的 Token 查询进度；未完成时 Result.Pending=true。
+	Query(ctx context.Context, cfg Config, secret Secret, token string) (Result, error)
+}
+
+// Field 声明通道需要的额外输入字段，前端据此渲染表单
+// （对应魔方插件的 collectionInfo()）。
+type Field struct {
+	Key         string `json:"key"`
+	Label       string `json:"label"`
+	Placeholder string `json:"placeholder,omitempty"`
+	Required    bool   `json:"required,omitempty"`
+}
+
+// Schemer 声明通道需要的额外输入字段；不实现则只收姓名 + 证件号。
+type Schemer interface {
+	Fields(cfg Config) []Field
 }
 
 // Config 是通道的非敏感配置。
@@ -107,6 +154,10 @@ func Names() []string {
 
 // ErrInvalidIDNumber 表示本地校验就没通过，不必调用上游。
 var ErrInvalidIDNumber = errors.New("身份证号格式或校验位不正确")
+
+// ErrChallengeRequired 表示该通道是扫码类：必须走 Challenge/Query 流程，
+// 不能同步核验（API 层会优先识别 Challenger）。
+var ErrChallengeRequired = errors.New("该通道需要扫码完成认证，不能同步核验")
 
 // ---- 本地校验与解析 ----
 

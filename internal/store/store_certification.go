@@ -35,6 +35,8 @@ type Certification struct {
 	BirthDate      *time.Time `json:"birth_date,omitempty"`
 	Provider       string     `json:"provider"`
 	VerifiedBy     string     `json:"verified_by,omitempty"`
+	ProviderRef    string     `json:"-"`
+	ProviderURL    string     `json:"-"`
 	RejectReason   string     `json:"reject_reason,omitempty"`
 	SubmittedAt    time.Time  `json:"submitted_at"`
 	ReviewedAt     *time.Time `json:"reviewed_at,omitempty"`
@@ -53,6 +55,9 @@ type CertificationInput struct {
 	VerifiedBy string
 	Gender     string
 	BirthDate  string
+	// ProviderRef / ProviderURL 保存扫码类通道的中间凭证与二维码地址，仅用于轮询。
+	ProviderRef string
+	ProviderURL string
 }
 
 // CertHash 用 master key 对实名信息做 HMAC，得到不可反查的去重指纹。
@@ -94,10 +99,10 @@ func (s *Store) SubmitCertification(ctx context.Context, userID int64, in Certif
 	var v Certification
 	err := s.DB.QueryRow(ctx, `INSERT INTO certifications(
   user_id,status,real_name_masked,id_type,id_number_masked,name_hash,id_number_hash,
-  gender,birth_date,provider,verified_by,submitted_at,reviewed_at,updated_at)
+  gender,birth_date,provider,verified_by,provider_ref,provider_url,submitted_at,reviewed_at,updated_at)
 -- 这些列都是 NOT NULL DEFAULT ''：必须用 COALESCE 兜底空串，
 -- 写成 NULLIF(...) 会把空值变 NULL 直接撞 23502。
-VALUES($1,$2,$3,$4,$5,$6,$7,COALESCE($8,''),$9::date,COALESCE($10,''),COALESCE($11,''),now(),$12,now())
+VALUES($1,$2,$3,$4,$5,$6,$7,COALESCE($8,''),$9::date,COALESCE($10,''),COALESCE($11,''),COALESCE($12,''),COALESCE($13,''),now(),$14,now())
 ON CONFLICT (user_id) DO UPDATE SET
   status=excluded.status,
   real_name_masked=excluded.real_name_masked,
@@ -109,16 +114,18 @@ ON CONFLICT (user_id) DO UPDATE SET
   birth_date=excluded.birth_date,
   provider=excluded.provider,
   verified_by=excluded.verified_by,
+  provider_ref=excluded.provider_ref,
+  provider_url=excluded.provider_url,
   reject_reason='',
   submitted_at=now(),
   reviewed_at=excluded.reviewed_at,
   updated_at=now()
-RETURNING public_id::text,user_id,status,real_name_masked,id_type,id_number_masked,gender,birth_date,provider,verified_by,reject_reason,submitted_at,reviewed_at`,
+RETURNING public_id::text,user_id,status,real_name_masked,id_type,id_number_masked,gender,birth_date,provider,verified_by,provider_ref,provider_url,reject_reason,submitted_at,reviewed_at`,
 		userID, status, certificationMaskName(in.RealName), idType, certificationMaskID(in.IDNumber),
 		CertHash(s.MasterKey, in.RealName), CertHash(s.MasterKey, in.IDNumber),
-		in.Gender, birth, in.Provider, in.VerifiedBy, reviewedAt).
+		in.Gender, birth, in.Provider, in.VerifiedBy, in.ProviderRef, in.ProviderURL, reviewedAt).
 		Scan(&v.PublicID, &v.UserID, &v.Status, &v.RealNameMasked, &v.IDType, &v.IDNumberMasked,
-			&v.Gender, &v.BirthDate, &v.Provider, &v.VerifiedBy, &v.RejectReason, &v.SubmittedAt, &v.ReviewedAt)
+			&v.Gender, &v.BirthDate, &v.Provider, &v.VerifiedBy, &v.ProviderRef, &v.ProviderURL, &v.RejectReason, &v.SubmittedAt, &v.ReviewedAt)
 	if err != nil {
 		if isUniqueViolation(err) {
 			// 唯一索引只建在 approved 上：说明这个证件号已经绑定过别的账号。
@@ -133,10 +140,10 @@ RETURNING public_id::text,user_id,status,real_name_masked,id_type,id_number_mask
 func (s *Store) GetCertification(ctx context.Context, userID int64) (Certification, error) {
 	var v Certification
 	err := s.DB.QueryRow(ctx, `SELECT c.public_id::text,c.user_id,c.status,c.real_name_masked,c.id_type,c.id_number_masked,
-  c.gender,c.birth_date,c.provider,c.verified_by,c.reject_reason,c.submitted_at,c.reviewed_at
+  c.gender,c.birth_date,c.provider,c.verified_by,c.provider_ref,c.provider_url,c.reject_reason,c.submitted_at,c.reviewed_at
 FROM certifications c WHERE c.user_id=$1`, userID).
 		Scan(&v.PublicID, &v.UserID, &v.Status, &v.RealNameMasked, &v.IDType, &v.IDNumberMasked,
-			&v.Gender, &v.BirthDate, &v.Provider, &v.VerifiedBy, &v.RejectReason, &v.SubmittedAt, &v.ReviewedAt)
+			&v.Gender, &v.BirthDate, &v.Provider, &v.VerifiedBy, &v.ProviderRef, &v.ProviderURL, &v.RejectReason, &v.SubmittedAt, &v.ReviewedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return v, ErrNotFound
 	}
@@ -186,6 +193,34 @@ func (s *Store) ReviewCertification(ctx context.Context, certPublicID string, ap
 SET status=$2,reject_reason=CASE WHEN $2='rejected' THEN $3 ELSE '' END,
     verified_by='admin',reviewed_at=now(),reviewed_by=$4,updated_at=now()
 WHERE public_id=$1`, certPublicID, status, strings.TrimSpace(reason), rid)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return fmt.Errorf("该证件号已被其它账号实名认证")
+		}
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// ResolveCertification 把一条 pending 的扫码认证写成终态（轮询命中时调用）。
+// 只动 pending：approved / rejected 已成定局，不能被后到的轮询改写。
+func (s *Store) ResolveCertification(ctx context.Context, userID int64, approved bool, message string) error {
+	status := "rejected"
+	if approved {
+		status = "approved"
+	}
+	var reviewedAt any
+	if approved {
+		reviewedAt = time.Now()
+	}
+	tag, err := s.DB.Exec(ctx, `UPDATE certifications
+SET status=$2, reject_reason=CASE WHEN $2='rejected' THEN $3 ELSE '' END,
+    verified_by=CASE WHEN $2='approved' THEN provider ELSE verified_by END,
+    reviewed_at=$4, updated_at=now()
+WHERE user_id=$1 AND status='pending'`, userID, status, strings.TrimSpace(message), reviewedAt)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return fmt.Errorf("该证件号已被其它账号实名认证")

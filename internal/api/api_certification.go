@@ -31,7 +31,7 @@ func (a *App) myCertification(c *gin.Context) {
 	cert, err := a.Store.GetCertification(c, pr.User.ID)
 	if errors.Is(err, store.ErrNotFound) {
 		// 没提交过不是错误：返回 required 供前端决定是否拦下单。
-		httpx.OK(c, 200, map[string]any{"status": "none", "required": required})
+		httpx.OK(c, 200, map[string]any{"status": "none", "required": required, "fields": a.certExtraFields(c)})
 		return
 	}
 	if err != nil {
@@ -48,6 +48,8 @@ func (a *App) myCertification(c *gin.Context) {
 		"birth_date":       cert.BirthDate,
 		"reject_reason":    cert.RejectReason,
 		"submitted_at":     cert.SubmittedAt,
+		"provider":         cert.Provider,
+		"fields":           a.certExtraFields(c),
 		"reviewed_at":      cert.ReviewedAt,
 	})
 }
@@ -56,9 +58,10 @@ func (a *App) myCertification(c *gin.Context) {
 func (a *App) submitCertification(c *gin.Context) {
 	pr, _ := getPrincipal(c)
 	var in struct {
-		RealName string `json:"real_name"`
-		IDNumber string `json:"id_number"`
-		IDType   string `json:"id_type"`
+		RealName string            `json:"real_name"`
+		IDNumber string            `json:"id_number"`
+		IDType   string            `json:"id_type"`
+		Extra    map[string]string `json:"extra"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
 		httpx.Fail(c, 400, "INVALID_REQUEST", "请求格式错误")
@@ -104,14 +107,59 @@ func (a *App) submitCertification(c *gin.Context) {
 		return
 	}
 
+	// 性别与出生日期本地解出来（身份证前 18 位自带这些信息）。
+	gender := ""
+	birth := ""
+	if in.IDType == "idcard" {
+		gender = certification.GenderFromIDCard(in.IDNumber)
+		birth = certification.BirthDateFromIDCard(in.IDNumber)
+	}
+
+	subject := certification.Subject{RealName: in.RealName, IDNumber: in.IDNumber, IDType: in.IDType, Extra: in.Extra}
 	approved := false
 	verifiedBy := ""
 	message := ""
 	if impl, ok := certification.Get(providerName); ok {
+		// 通道可声明额外输入（银行卡号、手机号）；必填项在调用上游前挡住。
+		if schemer, ok := impl.(certification.Schemer); ok {
+			for _, f := range schemer.Fields(cfg) {
+				if f.Required && subject.ExtraField(f.Key) == "" {
+					httpx.Fail(c, 400, "CERT_FIELD_REQUIRED", "缺少必填项："+f.Label)
+					return
+				}
+			}
+		}
+		// 扫码类通道：先落 pending 记录，前端拿二维码轮询。
+		if challenger, ok := impl.(certification.Challenger); ok {
+			chCtx, cancel := context.WithTimeout(c, 20*time.Second)
+			ch, cerr := challenger.Challenge(chCtx, cfg, secret, subject)
+			cancel()
+			if cerr != nil {
+				a.Store.MarkCertificationProviderHealth(c, provider.PublicID, false, cerr.Error())
+				httpx.Fail(c, 502, "CERT_PROVIDER_FAILED", "发起实名认证失败："+cerr.Error())
+				return
+			}
+			cert, err := a.Store.SubmitCertification(c, pr.User.ID, store.CertificationInput{
+				RealName: in.RealName, IDNumber: in.IDNumber, IDType: in.IDType,
+				Provider: providerName, Approved: false,
+				ProviderRef: ch.Token, ProviderURL: ch.URL,
+				Gender: gender, BirthDate: birth,
+			})
+			if err != nil {
+				httpx.Fail(c, 400, "CERT_SUBMIT_FAILED", err.Error())
+				return
+			}
+			_ = a.Store.Audit(c, pr.User.ID, "certification.submit", "certification", cert.PublicID, c.GetString("request_id"), clientIP(c), c.Request.UserAgent(), nil, map[string]any{"status": cert.Status, "provider": providerName, "challenge": true})
+			httpx.OK(c, 200, map[string]any{
+				"status":   "pending",
+				"provider": providerName,
+				"url":      ch.URL,
+				"message":  ch.Message,
+			})
+			return
+		}
 		verifyCtx, cancel := context.WithTimeout(c, 15*time.Second)
-		res, verr := impl.Verify(verifyCtx, cfg, secret, certification.Subject{
-			RealName: in.RealName, IDNumber: in.IDNumber, IDType: in.IDType,
-		})
+		res, verr := impl.Verify(verifyCtx, cfg, secret, subject)
 		cancel()
 		if verr != nil {
 			a.Store.MarkCertificationProviderHealth(c, provider.PublicID, false, verr.Error())
@@ -126,13 +174,6 @@ func (a *App) submitCertification(c *gin.Context) {
 		}
 	}
 
-	// 性别与出生日期本地解出来（身份证前 18 位自带这些信息）。
-	gender := ""
-	birth := ""
-	if in.IDType == "idcard" {
-		gender = certification.GenderFromIDCard(in.IDNumber)
-		birth = certification.BirthDateFromIDCard(in.IDNumber)
-	}
 	cert, err := a.Store.SubmitCertification(c, pr.User.ID, store.CertificationInput{
 		RealName: in.RealName, IDNumber: in.IDNumber, IDType: in.IDType,
 		Provider: providerName, Approved: approved, VerifiedBy: verifiedBy,
@@ -147,6 +188,7 @@ func (a *App) submitCertification(c *gin.Context) {
 		"status":           cert.Status,
 		"real_name_masked": cert.RealNameMasked,
 		"id_number_masked": cert.IDNumberMasked,
+		"provider":         providerName,
 		"message":          message,
 	})
 }
@@ -168,6 +210,101 @@ func (a *App) certSecret(enc string) (certification.Secret, error) {
 		return nil, errors.New("实名通道凭据不是合法 JSON")
 	}
 	return certification.Secret(out), nil
+}
+
+// certExtraFields 返回默认通道声明给前端的额外输入字段（扫码通道用它渲染表单）。
+func (a *App) certExtraFields(ctx context.Context) []certification.Field {
+	provider, _, err := a.Store.ActiveCertificationProvider(ctx)
+	if err != nil {
+		return nil
+	}
+	impl, ok := certification.Get(provider.Provider)
+	if !ok {
+		return nil
+	}
+	schemer, ok := impl.(certification.Schemer)
+	if !ok {
+		return nil
+	}
+	return schemer.Fields(certification.Config{Provider: provider.Provider, Fields: provider.Config})
+}
+
+// pollCertification 轮询扫码类认证的结果；前端在 pending 时每 3 秒调用一次。
+func (a *App) pollCertification(c *gin.Context) {
+	pr, _ := getPrincipal(c)
+	cert, err := a.Store.GetCertification(c, pr.User.ID)
+	if errors.Is(err, store.ErrNotFound) {
+		httpx.OK(c, 200, map[string]any{"status": "none"})
+		return
+	}
+	if err != nil {
+		httpx.Fail(c, 500, "INTERNAL_ERROR", "读取实名信息失败")
+		return
+	}
+	if cert.Status != "pending" {
+		// 已出终态（管理员也可能直接审核过）：直接返回结果。
+		httpx.OK(c, 200, map[string]any{"status": cert.Status, "message": cert.RejectReason})
+		return
+	}
+	if cert.ProviderRef == "" {
+		// 人工审核通道没有可轮询的上游，等管理员处理。
+		httpx.OK(c, 200, map[string]any{"status": "pending", "message": "等待管理员审核"})
+		return
+	}
+	provider, secretEnc, err := a.Store.ActiveCertificationProvider(c)
+	if err != nil {
+		// 通道被删除/停用：保持 pending，绝不把用户误判为失败。
+		httpx.OK(c, 200, map[string]any{"status": "pending", "url": cert.ProviderURL, "message": "认证通道暂不可用，请稍后刷新"})
+		return
+	}
+	if provider.Provider != cert.Provider {
+		httpx.OK(c, 200, map[string]any{"status": "pending", "url": cert.ProviderURL, "message": "默认认证通道已变更，请按原二维码完成操作"})
+		return
+	}
+	secret, err := a.certSecret(secretEnc)
+	if err != nil {
+		httpx.Fail(c, 500, "CERT_SECRET_INVALID", err.Error())
+		return
+	}
+	impl, ok := certification.Get(provider.Provider)
+	if !ok {
+		httpx.OK(c, 200, map[string]any{"status": "pending", "url": cert.ProviderURL})
+		return
+	}
+	challenger, ok := impl.(certification.Challenger)
+	if !ok {
+		httpx.OK(c, 200, map[string]any{"status": "pending", "url": cert.ProviderURL})
+		return
+	}
+	qCtx, cancel := context.WithTimeout(c, 15*time.Second)
+	res, qerr := challenger.Query(qCtx, certification.Config{Provider: provider.Provider, Fields: provider.Config}, secret, cert.ProviderRef)
+	cancel()
+	if qerr != nil {
+		// 查询失败不改状态：前端下一个周期会继续轮询。
+		a.Store.MarkCertificationProviderHealth(c, provider.PublicID, false, qerr.Error())
+		httpx.OK(c, 200, map[string]any{"status": "pending", "url": cert.ProviderURL, "message": "查询超时，稍后自动重试"})
+		return
+	}
+	a.Store.MarkCertificationProviderHealth(c, provider.PublicID, true, "")
+	if res.Pending {
+		httpx.OK(c, 200, map[string]any{"status": "pending", "url": cert.ProviderURL, "message": res.Message})
+		return
+	}
+	if err := a.Store.ResolveCertification(c, pr.User.ID, res.Match, res.Message); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			// 记录已不是 pending（管理员刚处理过），下一次轮询会读到真实状态。
+			httpx.OK(c, 200, map[string]any{"status": "pending"})
+			return
+		}
+		httpx.Fail(c, 400, "CERT_RESOLVE_FAILED", err.Error())
+		return
+	}
+	status := "rejected"
+	if res.Match {
+		status = "approved"
+	}
+	_ = a.Store.Audit(c, pr.User.ID, "certification.poll", "certification", cert.PublicID, c.GetString("request_id"), clientIP(c), c.Request.UserAgent(), nil, map[string]any{"status": status, "provider": provider.Provider})
+	httpx.OK(c, 200, map[string]any{"status": status, "message": res.Message})
 }
 
 // ---- 管理端：实名审核 ----

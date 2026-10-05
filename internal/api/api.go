@@ -156,6 +156,7 @@ func NewRouter(a *App) *gin.Engine {
 			// 实名认证
 			authed.GET("/certification", a.require("profile.read"), a.myCertification)
 			authed.POST("/certification", a.require("profile.update"), a.csrf(), a.submitCertification)
+			authed.GET("/certification/poll", a.require("profile.read"), a.pollCertification)
 			// 按量 / 超量计费：查看用量与待出账费用，上报用量
 			authed.GET("/services/:id/usage", a.require("service.read"), a.serviceUsage)
 			authed.POST("/services/:id/usage", a.require("service.operate"), a.csrf(), a.reportServiceUsage)
