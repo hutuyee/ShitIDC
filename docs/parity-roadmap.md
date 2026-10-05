@@ -955,3 +955,46 @@ CBAP 包 `oss/TencentcloudOss.zip` 是明文插件（module=oss，主类 `Tencen
 - 下载 302 后由 COS 直接响应对象，无法再强制 attachment 响应头；上传类型白名单本就不含 HTML / SVG，风险面不变。
 
 验证：`gofmt` / `go build ./...` / `go vet` / `vue-tsc --noEmit`。
+
+### 10.15 CBAP addon/ 30 个插件包审计（本轮说明）
+
+CBAP 仓库 `plugins/addon/` 下 30 个 zip 经逐个检查：**包内全部 `.php`（含 `config.php` 与语言包）均为 ionCube 编码**，主类与接口契约不可读；可读的只有前端资产（`template/**` 的 js/html/tpl、邮件模板 html、vendor 目录、`menu.php` 与 16 字节 README 等）。没有可读契约就不编造行为，本轮给出逐包审计与去向：
+
+| 包 | 前端可读线索 | 判定 |
+|---|---|---|
+| AbnormalInspectionRecords | 异常记录：关联产品、标签、导出 | 未落地 |
+| ClientCare | 客户关怀：邮件/站内信、周期推送、指定用户 | 未落地 |
+| ClientCustomField | 客户自定义字段（管理列表/申请） | 未落地（站内仅有商品自定义字段） |
+| CostPay | 支出记录：来源/主体/金额/日期 | 未落地 |
+| CreditLimit | 授信：消费记录、混合支付 | 已对齐（授信账户 + 后台授信管理） |
+| CycleArtificialOrder | 人工订单：调价、批量、子项调价 | 未落地 |
+| EContract | 电子合同：模板/签署/邮寄 | 未落地（§10.13 已声明跳过） |
+| EmailNoticeAdmin | 管理员邮件通知：接口+模板+收件人 | 部分（邮件通道/模板已有；事件通知管理员未落地） |
+| EventPromotion | 促销：满减/百分比、时间窗 | 未落地 |
+| FlowPacket | 流量包管理 | 未落地 |
+| HostTransfer | 主机转移 | 未落地 |
+| IdcsmartClientLevel | 客户等级：三级、商品可选、批量保存 | 已对齐（客户组差异定价，口径等价） |
+| IdcsmartDomain | 域名 | 跳过（§9.4） |
+| IdcsmartInvoice | 开票申请：抬头/快递/邮寄/驳回 | 未落地（站内「发票」指账单口径） |
+| IdcsmartRecommend | 推荐/关联商品：分组、排序、复制 | 未落地（商品页仅有「推荐商品」标记） |
+| IdcsmartSale | 销售统计：消费排名、时间窗图表 | 部分（统计页已有；业务经理维度见 §10.8 说明） |
+| IdcsmartStatistics | 统计图表 | 已对齐（后台统计/仪表盘） |
+| IdcsmartVoucher | 代金券：发放/使用/次数 | 未落地（站内优惠券是码核销式，非发放式） |
+| IdcsmartWebhook | 消息推送（钉钉/企业微信等） | 已对齐（internal/webhook + 后台 Webhook 页） |
+| ManualResource | 手动资源：供应商、noVNC 控制台 | 未落地 |
+| NoticeSendMerge | 通知合并发送 | 未落地 |
+| ProductCashback | 商品返现 | 未落地 |
+| ProductCertLimit | 产品实名限制 | 未落地 |
+| ProductCycleLimit | 购买周期限制 | 未落地 |
+| ProductDropDownSelect | 商品下拉选择（线索不足） | 未落地（前端仅「商品选择」） |
+| ProductNumLimit | 购买数量限制 | 未落地 |
+| ProductRelatedLimit | 关联购买限制 | 未落地 |
+| TicketInternalPremium | 工单内部备注/内部工单 | 未落地 |
+| TicketPremium | 工单高级版（部门/字段/回执模板） | 部分（基础工单已有） |
+| WanyunResource | 万云资源：自定义字段、节点 | 未落地 |
+
+主程序包 `zjmf-finance/public/plugins/addons/` 的 5 个（demo_style 示例、expired_ip_log / export_excel 已对齐见 §10.8、expired_auto_delete_bill 与 product_divert 主类 ionCube 加密）本轮复核无变化。
+
+说明：未落地项的共同原因是「服务端加密 + 无对外契约」；其中多数（FlowPacket、EventPromotion、Product* 限制系列、HostTransfer）站内已有可复用的骨架（商品/订单/结算/事件），后续可逐个按其前端资产可见的字段面直接设计实现，无需参考加密代码。
+
+验证：本轮纯审计与文档，无代码改动。
