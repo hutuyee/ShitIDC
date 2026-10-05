@@ -1277,6 +1277,28 @@ func (s *Store) InvoiceRequestFilename(ctx context.Context, userID int64, public
 	return filename, nil
 }
 
+// InvoiceRequestParcelImage 读取快递单照片地址；admin=false 时仅限本人，未上传返回 ErrNotFound。
+func (s *Store) InvoiceRequestParcelImage(ctx context.Context, userID int64, publicID string, admin bool) (string, error) {
+	where := ` WHERE public_id=$1`
+	args := []any{publicID}
+	if !admin {
+		where += ` AND user_id=$2`
+		args = append(args, userID)
+	}
+	var image string
+	err := s.DB.QueryRow(ctx, `SELECT parcel_image FROM invoice_requests`+where, args...).Scan(&image)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrNotFound
+	}
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(image) == "" {
+		return "", ErrNotFound
+	}
+	return image, nil
+}
+
 // advanceInvoiceFeeOrderTx 在发票费用单支付完成的同一事务里，把关联申请推进到「待审核」。
 func advanceInvoiceFeeOrderTx(ctx context.Context, tx pgx.Tx, orderID int64) error {
 	var kindDetail string

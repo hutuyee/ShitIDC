@@ -440,6 +440,7 @@ func (a *App) registerAdminRoutes(g *gin.RouterGroup) {
 	g.POST("/invoice/:id/flush", a.require("invoice.manage"), a.csrf(), a.adminFlushInvoiceRequest)
 	g.POST("/invoice/:id/upload", a.require("invoice.manage"), a.csrf(), a.adminUploadInvoiceFile)
 	g.GET("/invoice/:id/invoice_filename", a.require("invoice.manage"), a.adminInvoiceFile)
+	g.GET("/invoice/:id/parcel_image", a.require("invoice.manage"), a.adminInvoiceParcelImage)
 	g.DELETE("/invoice/:id/invoice_filename", a.require("invoice.manage"), a.csrf(), a.adminDeleteInvoiceFile)
 	// 商品返现（对齐魔方 product_cashback 插件；支付成功后返到余额）
 	g.GET("/product-cashbacks", a.require("product.write"), a.adminListProductCashbacks)

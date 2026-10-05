@@ -554,6 +554,20 @@ func (a *App) adminDeleteInvoiceFile(c *gin.Context) {
 	httpx.OK(c, 200, gin.H{"ok": true})
 }
 
+// adminInvoiceParcelImage 后台查看快递单照片。
+func (a *App) adminInvoiceParcelImage(c *gin.Context) {
+	ref, err := a.Store.InvoiceRequestParcelImage(c, 0, c.Param("id"), true)
+	if errors.Is(err, store.ErrNotFound) {
+		httpx.Fail(c, 404, "INVOICE_PARCEL_IMAGE_NOT_FOUND", "快递单照片不存在")
+		return
+	}
+	if err != nil {
+		httpx.Fail(c, 500, "INVOICE_PARCEL_IMAGE_FAILED", "读取快递单照片失败")
+		return
+	}
+	a.invoiceServeFile(c, ref, "parcel"+filepath.Ext(ref))
+}
+
 // adminInvoiceFile 后台下载发票文件。
 func (a *App) adminInvoiceFile(c *gin.Context) {
 	ref, err := a.Store.InvoiceRequestFilename(c, 0, c.Param("id"), true)
