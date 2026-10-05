@@ -235,9 +235,11 @@ func (s *Store) CancelExpiredOrders(ctx context.Context, hours int) (int64, erro
 	if hours <= 0 {
 		hours = 24
 	}
+	// 周期人工订单（kind='artificial'）不参与超时取消：它们由生成规则周期性
+	// 产出、等待管理员线下收款或标记支付，作废由后台「删除订单」显式触发。
 	tag, err := s.DB.Exec(ctx, `WITH expired AS (
  UPDATE orders SET status='cancelled',cancelled_at=now(),updated_at=now()
- WHERE status='unpaid' AND created_at < now()-make_interval(hours => $1) RETURNING id
+ WHERE status='unpaid' AND kind <> 'artificial' AND created_at < now()-make_interval(hours => $1) RETURNING id
 ), voided AS (
  UPDATE invoices i SET status='void' FROM expired e WHERE i.order_id=e.id AND i.status='unpaid' RETURNING i.id
 )

@@ -141,6 +141,20 @@ func main() {
 		})
 	})
 	// Roadmap 第二十阶段: Session 清理.
+	// 周期人工订单：按 num + unit 的周期为用户生成人工订单（CycleArtificialOrder
+	// 插件对齐）。生成逻辑幂等：每笔订单落在对应周期时点上，重复执行不会重复生成。
+	_, _ = c.AddFunc("@every 10m", func() {
+		withLock("scheduler:cycle-artificial-order", 540*time.Second, func(ctx context.Context) {
+			n, err := st.GenerateDueCycleArtificialOrders(ctx, 50)
+			if err != nil {
+				log.Printf("generate cycle artificial orders: %v", err)
+				return
+			}
+			if n > 0 {
+				log.Printf("generated %d cycle artificial order(s)", n)
+			}
+		})
+	})
 	_, _ = c.AddFunc("30 4 * * *", func() {
 		withLock("scheduler:session-cleanup", 300*time.Second, func(ctx context.Context) {
 			n, err := st.CleanupExpiredSessions(ctx, 7)
