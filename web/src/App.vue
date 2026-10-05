@@ -107,6 +107,7 @@ function toggleTheme() {
             <router-link v-if="auth.permissions['order.read']" :to="ADMIN_PATH + '/orders'">订单中心</router-link>
             <router-link v-if="auth.permissions['coupon.manage']" :to="ADMIN_PATH + '/coupons'">优惠券</router-link>
             <router-link v-if="auth.permissions['voucher.manage']" :to="ADMIN_PATH + '/vouchers'">代金券</router-link>
+            <router-link v-if="auth.permissions['promotion.manage']" :to="ADMIN_PATH + '/promotions'">活动促销</router-link>
             <router-link v-if="auth.permissions['product.write']" :to="ADMIN_PATH + '/cashbacks'">商品返现</router-link>
             <router-link v-if="auth.permissions['finance.report']" :to="ADMIN_PATH + '/order-costs'">成本支出</router-link>
             <router-link v-if="auth.permissions['agent.manage']" :to="ADMIN_PATH + '/agents'">代理分组</router-link>

@@ -29,6 +29,7 @@ import AdminAnnouncements from './views/AdminAnnouncements.vue'
 import AdminStats from './views/AdminStats.vue'
 import AdminCoupons from './views/AdminCoupons.vue'
 import AdminVouchers from './views/AdminVouchers.vue'
+import AdminPromotions from './views/AdminPromotions.vue'
 import AdminCashbacks from './views/AdminCashbacks.vue'
 import AdminOrderCosts from './views/AdminOrderCosts.vue'
 import AdminInspectionRecords from './views/AdminInspectionRecords.vue'
@@ -65,6 +66,7 @@ const router = createRouter({ history: createWebHistory(), routes: [
   { path: ADMIN_PATH + '/stats', component: AdminStats },
   { path: ADMIN_PATH + '/coupons', component: AdminCoupons },
   { path: ADMIN_PATH + '/vouchers', component: AdminVouchers },
+  { path: ADMIN_PATH + '/promotions', component: AdminPromotions },
   { path: ADMIN_PATH + '/cashbacks', component: AdminCashbacks },
   { path: ADMIN_PATH + '/order-costs', component: AdminOrderCosts },
   { path: ADMIN_PATH + '/inspection-records', component: AdminInspectionRecords },

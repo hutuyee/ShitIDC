@@ -6,6 +6,7 @@ import { api, dataOf } from '../api'
 
 const products = ref<any[]>([])
 const groups = ref<any[]>([])
+const promotions = ref<any[]>([])
 const message = useMessage()
 const router = useRouter()
 const keyword = ref('')
@@ -45,6 +46,25 @@ async function checkCoupon() {
 const buyTotalAfterCoupon = computed(() => Math.max(0, buyTotal.value - couponDiscount.value))
 const buyTotalAfterDiscount = computed(() => Math.max(0, buyTotal.value - couponDiscount.value - voucherDiscount.value))
 
+// 活动促销（对齐 EventPromotion）：满足商品 / 周期条件的活动自动生效，这里只做展示。
+const cycleOfProduct = (p: any) => (buyProduct.value?.id === p?.id ? buyCycle.value : (p?.billing_cycle || 'monthly'))
+function promotionFor(p: any) {
+  if (!p) return null
+  return promotions.value.find(v => {
+    const ids = v.products || []
+    if (ids.length && !ids.includes(p.id)) return false
+    if (v.cycle_limit && (v.cycle || []).length) {
+      const cycles = (v.cycle || []).map((c: string) => (c === 'annually' ? 'yearly' : c))
+      if (!cycles.includes(cycleOfProduct(p))) return false
+    }
+    return true
+  }) || null
+}
+const promoText = (v: any) => (v ? (v.type === 'percent'
+  ? `${v.value}% 折扣`
+  : `满 ${Number(v.full || 0).toFixed(2)} 减 ${Number(v.value || 0).toFixed(2)}`) : '')
+const buyPromotion = computed(() => promotionFor(buyProduct.value))
+
 async function checkVoucher() {
   if (!voucherCode.value.trim()) { return }
   voucherChecking.value = true
@@ -61,12 +81,14 @@ async function checkVoucher() {
 }
 
 async function load() {
-  const [p, g] = await Promise.all([
+  const [p, g, promo] = await Promise.all([
     api.get('/products').then(r => dataOf<any[]>(r)).catch(() => []),
-    api.get('/product-groups').then(r => dataOf<any[]>(r)).catch(() => [])
+    api.get('/product-groups').then(r => dataOf<any[]>(r)).catch(() => []),
+    api.get('/promotions/active').then(r => dataOf<any[]>(r)).catch(() => [])
   ])
   products.value = p
   groups.value = g
+  promotions.value = promo
 }
 
 async function openBuy(p: any) {
@@ -271,7 +293,13 @@ onMounted(load)
         <div v-if="sec.name" class="catalog-group-head"><h2>{{ sec.name }}</h2><span>{{ sec.items.length }} 个产品</span></div>
         <div class="product-grid-rich">
           <article v-for="p in sec.items" :key="p.id" class="product-card-rich">
-            <div class="product-card-top"><span class="product-provider">{{ p.group_name || (p.provider_name || (p.provider_type === 'manual' ? 'ShitIDC' : p.provider_type)) }}</span><span class="product-status">可订购</span></div>
+            <div class="product-card-top">
+              <span class="product-provider">{{ p.group_name || (p.provider_name || (p.provider_type === 'manual' ? 'ShitIDC' : p.provider_type)) }}</span>
+              <span class="row" style="gap:6px">
+                <span v-if="promotionFor(p)" class="promo-badge">活动 {{ promoText(promotionFor(p)) }}</span>
+                <span class="product-status">可订购</span>
+              </span>
+            </div>
             <h2>{{ p.name }}</h2>
             <p v-if="p.description" class="product-desc">{{ p.description }}</p>
             <div class="product-price"><strong>{{ money(p.price_cents, p.currency) }}</strong><span>/ {{ cycle(p.billing_cycle) }}</span></div>
@@ -361,6 +389,9 @@ onMounted(load)
         <div v-if="stock.stock_control" class="stock-note" :class="{ low: stock.available <= 3 }">
           剩余库存：{{ stock.available }} 件
         </div>
+        <div v-if="buyPromotion" class="promo-hint">
+          活动促销：{{ promoText(buyPromotion) }}（下单时自动生效，最终金额以服务端重算为准）
+        </div>
 
         <div>
           <b class="muted" style="font-size:12px">优惠码</b>
@@ -389,6 +420,8 @@ onMounted(load)
 </template>
 
 <style scoped>
+.promo-badge { padding: 2px 8px; border-radius: 999px; font-size: 11px; background: color-mix(in srgb, #f0a020 18%, transparent); color: #c07800; border: 1px solid color-mix(in srgb, #f0a020 40%, transparent); }
+.promo-hint { font-size: 12px; color: #c07800; background: color-mix(in srgb, #f0a020 12%, transparent); border: 1px solid color-mix(in srgb, #f0a020 30%, transparent); border-radius: 10px; padding: 8px 10px; }
 .catalog-section { margin-bottom: 26px; }
 .catalog-group-head { display: flex; align-items: baseline; gap: 10px; margin: 0 0 12px; }
 .catalog-group-head h2 { margin: 0; font-size: 17px; }
