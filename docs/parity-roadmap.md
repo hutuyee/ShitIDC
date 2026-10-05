@@ -769,3 +769,19 @@ PKCS7 块大小 32、明文结构 16 随机 + 4 长度 + msg + receiveid），�
 邮件/短信通道一致：`secret=true` 的字段（谷歌 SecretKey；腾讯 SecretID / SecretKey /
 AppSecretKey）进加密凭据，其余进普通配置。
 
+### 10.5 实名核验通道补齐（`internal/certification`）
+
+§9.3 只对齐了安装目录里的 `alitwo`（云市场二要素）。CBAP 插件包与安装目录里还有 5 个实名认证插件，本轮全部补齐；扫码类通道引入了「初始化拿二维码 + 轮询」的第二条提交路径（此前只有同步核验一条）。
+
+| 通道 | 协议 | 关键点 |
+|---|---|---|
+| `ali` 支付宝芝麻认证 | openapi.alipay.com，RSA2 签名 | initialize（拿 certify_id）→ 本地拼 page URL → query（passed 为 T/F，空=处理中）；响应对响应节点 JSON 原文做 RSA2 验签 |
+| `idcsmartali` 智简魔方芝麻信用 | POST api1.idcsmart.com/certapi.php，头 api/key | initialize/certify/query 三动作；query 非 200 一律按处理中——参考实现把「未扫码」判成未通过，会把刚提交的用户直接写死失败 |
+| `wechat` 微信人脸核身 | faceid.tencentcloudapi.com，TC3-HMAC-SHA256 | DetectAuth → BizToken/扫码地址（URL 做 htmlspecialchars_decode）→ GetDetectInfoEnhanced，Text.ErrCode==0 通过；查询遇 Error 节点同样按处理中
+| `threehc` 银行卡要素 | GET {base}/cert/bank-card/{type}，APPCODE | type=2/3/4 对应二/三/四要素；number 传身份证、bank 传银行卡；判据 ret==200 且 data.desc 为「一致」 |
+| `phonethree` 手机三要素 | GET {url}?idcard&phone&realname，APPCODE | code==200 一致；ordersign 作为凭证附加在结果里 |
+
+扫码流程：提交命中 `Challenger` 接口时不再同步核验，而是落一条 pending 记录（provider_ref / provider_url 存凭证与二维码地址，不对外返回），返回 {status:"pending", url}；前端 Profile.vue 用 NQrCode 渲染二维码并每 3 秒轮询 GET /api/v1/certification/poll，命中后由 ResolveCertification 写成终态（只动 pending，管理员已处理的记录不会被后到的轮询改写）。
+
+迁移：migrations/026_certification_provider_ref.sql（certifications 表加 provider_ref / provider_url 两列，默认空串，存量记录不受影响）。 |
+

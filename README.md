@@ -86,7 +86,7 @@
 - **接口分组与容量分配**：商品可绑定接口分组，开通时按 `least_loaded` / `fill_first` / `round_robin` 策略挑一个还有容量的接口；容量按「还活着的服务」计算，分组满了会明确失败并提示扩容，而不是硬塞到已满的接口上
 - **PayPal**：Orders v2 下单，access token 缓存（3 笔订单只取 1 次），回调验签走官方 `verify-webhook-signature` 接口；金额用字符串解析避免浮点误差
 - **USDT（Epusdt）**：签名算法与官方文档例子**逐字节一致**（测试直接复算文档给出的签名），回调验签 + 法币金额换算
-- **实名认证**：通道可插拔（**阿里云二要素自动核验** / 人工审核），管理端可增删与切换默认通道。**真实姓名与身份证号绝不落明文**——只存掩码与 `HMAC-SHA256` 指纹（裸哈希可被穷举反查）；本地先校验身份证校验位（含"2 月 30 日"这类被 `time.Date` 归一化放过的非法日期），挡掉打错一位再调付费通道；同一证件号不能认证两个账号
+- **实名认证**：通道可插拔（**阿里云二要素**、**支付宝芝麻认证**、**智简魔方芝麻信用**、**微信人脸核身（腾讯云慧眼）**、**银行卡二/三/四要素**、**手机号三要素**、人工审核），管理端可增删与切换默认通道；扫码类通道提交后展示二维码并每 3 秒自动轮询结果，中途刷新可继续查询。**真实姓名与身份证号绝不落明文**——只存掩码与 `HMAC-SHA256` 指纹（裸哈希可被穷举反查）；本地先校验身份证校验位（含"2 月 30 日"这类被 `time.Date` 归一化放过的非法日期），挡掉打错一位再调付费通道；同一证件号不能认证两个账号。两处对参考实现的纠偏：支付宝响应经 RSA2 验签后才采信（否则伪造响应可把账号刷成已认证）；扫码通道「未完成 / 查询异常」一律按处理中返回，不照插件那样直接判失败
 - **后台不再要求手抄 UUID**：任何需要引用用户/商品的地方都是「点开输入框 → 搜索 → 看到关键信息 → 选中」（新组件 `web/src/components/EntityPicker.vue` + 后端 `/admin/search` 统一搜索，支持邮箱、UID、UUID、商品名模糊匹配）
 - **点击用户行查看全部信息**：抽屉里一次看到余额、机器、订单、授信与占用，可直接调账、查看实名资料、禁用账号（`/admin/users/:id/detail` 聚合接口，避免前端发四五个请求还要处理部分失败）
 - **公告可以点开看全文**：仪表板只放最新 5 条做入口（整行可点、摘要单行截断），点开进 `/announcements/:id` 详情页按段落渲染全文；`/announcements` 列表页支持搜索与只看置顶。下线的公告对用户返回 404，撤下的内容不会被翻出来
@@ -155,6 +155,7 @@ docker compose exec -T postgres sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_D
 docker compose exec -T postgres sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < migrations/023_mail_providers.sql
 docker compose exec -T postgres sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < migrations/024_oauth_suite_tickets.sql
 docker compose exec -T postgres sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < migrations/025_captcha_providers.sql
+docker compose exec -T postgres sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < migrations/026_certification_provider_ref.sql
 ```
 
 如果你的 shell 没有导出这两个变量，可直接用 `.env` 里的实际用户名和数据库名替换。全新数据库会按 `001 -> 013` 自动执行。
