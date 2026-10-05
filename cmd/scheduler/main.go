@@ -174,6 +174,32 @@ func main() {
 			}
 		})
 	})
+	// 内部工单（对齐魔方 TicketInternalPremium 插件）：执行到期的定时工单，
+	// 并对剩余处理时间不足 15% 的工单给处理人发站内提醒。
+	_, _ = c.AddFunc("@every 1m", func() {
+		withLock("scheduler:ticket-internal-cron", 50*time.Second, func(ctx context.Context) {
+			n, err := st.RunDueTicketInternalCronJobs(ctx, 20)
+			if err != nil {
+				log.Printf("ticket internal cron: %v", err)
+				return
+			}
+			if n > 0 {
+				log.Printf("ticket internal cron created %d ticket(s)", n)
+			}
+		})
+	})
+	_, _ = c.AddFunc("@every 5m", func() {
+		withLock("scheduler:ticket-internal-reminder", 4*time.Minute, func(ctx context.Context) {
+			n, err := st.RunTicketInternalTimeoutReminders(ctx, 50)
+			if err != nil {
+				log.Printf("ticket internal reminder: %v", err)
+				return
+			}
+			if n > 0 {
+				log.Printf("ticket internal reminded %d ticket(s)", n)
+			}
+		})
+	})
 	_, _ = c.AddFunc("30 4 * * *", func() {
 		withLock("scheduler:session-cleanup", 300*time.Second, func(ctx context.Context) {
 			n, err := st.CleanupExpiredSessions(ctx, 7)
