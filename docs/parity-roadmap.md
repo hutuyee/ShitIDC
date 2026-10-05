@@ -876,3 +876,35 @@ CBAP 包 `sub_server/kanghostx` 是「Kangle对接模块（V10版）」：面板
 - `ClientArea`/`ClientAreaOutput`（主机信息表、面板登录表单）与 `getServerIp`、`AllowFunction`：PHP 平台侧模板与能力声明；SPA 下对应信息在开通时落库（实例 Data 里的面板地址/账号/密码）。
 
 导入侧：`internal/zjmfimport` 按「形态」识别签名（`_CreateSign` 出现 `md5(` 即 md5concat），kanghostx 与 wlkanglepro 同构，其 `_ConfigOptions`（way/parameterN/kl_*）可被解析成商品配置项，配合本次键位映射直接可用。
+
+### 10.12 bthosts（btHost 虚拟主机）Provider（本轮补齐）
+
+魔方随包发布的 `servers/bthosts`（btHost 对接模块，APIVersion 1.7.1，明文）与 CBAP 包 `sub_server/bthostx`（宝塔虚拟主机 Bthost 模块 V10 版）对接的是同一套上游 `/api/vhost/*` API。本轮新增原生 Provider `internal/provider/bthosts`，两套商品配置键位都支持。
+
+| 维度 | 参考实现 | ShitIDC 落地 |
+|---|---|---|
+| 签名 | `strtoupper(md5(implode(sort([time, random, accesshash]))))`，token 只参与摘要、不随请求发送 | `sign`；`time/random/signature` 随表单（POST）或查询（GET）下发 |
+| 探活 | `TestLink`：GET `/api/vhost/index` | `TestConnection` 同 URL，`code == 1` 判据 |
+| 开通 | `user_create`（username + password）取 `data.id`，再 `host_build`（`pack[...]`）取 `data.site.id` | `Create` 两步同序；用户名取开通请求 ID 的字母数字片段（≤32），随机 10 位密码 |
+| 暂停 / 启用 / 删除 | `host_locked` / `host_start` / `host_recycle`（进上游回收站） | 同名三动作 |
+| 续费 | `host_recovery` → `host_start` → `host_endtime`（`Y-m-d`） | 同序列；前两步尽力而为，`host_endtime` 失败返回错误（见下文差异） |
+| 升降级 | 套餐走 `host_update(plan_id)`；自定义/弹性走 `host_edit` + 限速联动 | `ChangePackage` 同口径；`applySpeed` 复刻 `_Speed/_UnSpeed`：并发或带宽为 0 → `host_speedoff`，否则 `host_speed` |
+| 经典键位 | 1.7.1：`type`（0 自定义 / 1 套餐 / 2 弹性）、`plans_id`、`sort_id`、`port`、`domain_num`、`web_back_num`、`sql_back_num`、`domainpools_id`、`ippools_id`、`ip_num`、`phpver`、`perserver`、`limit_rate`、`site_max`、`sql_max`、`flow_max`、`sub_bind` | 逐键映射 `pack[...]`，原值直达上游；`type == 1` 带 `plans_id` 与 `sort_id` |
+| V10 键位 | 自定义 `way=0` 读 `parameter1..20`；弹性 `way=1` 读 `bt_site/sql/domain/flow/webback/sqlback/ipnum/perserver/limit` 与共用 `parameter1..11` | `isV10` / `isElastic` 分流后逐键映射，与参考实现一致（session 按服务端读取的 `parameter4`；参考实现的 ConfigOptions 把该项 key 误写成 `parameter1`） |
+| 单位换算 | `parameter14`/`bt_flow`（G）×1024 → `flow_max`（MB）；`parameter15`/`bt_limit`（MB/s）×1024/8 → `limit_rate`（KB/s） | `scaleInt` 同系数；经典键位不换算，原值直达 |
+
+有意差异：
+
+- `Renew` 里 `host_endtime` 失败返回错误：参考实现 `_Renew` 把失败也包成 `status=success`（msg 写「续费失败：…」），调度层会误判成功；`host_recovery`/`host_start` 与参考一致保持尽力而为、不阻断。
+- 开通时的 `endtime`：经典的 `_CreateAccount` 用 `nextduedate`，但 Provider 的开通请求没有交期（只有 `RenewRequest` 带 `ExpiresAt`），故开通按 V10 的兜底值 `2099-12-31`，续费时由 `Renew` 同步真实到期时间。
+- 实例数据额外写入 `dedicatedip`（面板主机名），对齐参考实现开通成功后写 `dedicatedip`（服务器 host）的行为，供「到期产品删除 IP 记录」使用。
+- 用户名生成：经典用域名、V10 用主机名；Provider 两个字段都拿不到，取开通请求 ID 的字母数字片段（同 wlkangle/nokvm 口径）。
+
+未落地项（接口/形态没有对应物，不强行编造）：
+
+- `host_info`/`host_status`（状态）、`host_sync` + `user_info`（同步）、`host_pass`（改密）、`host_stop`、`host_resource`（用量）：Provider 接口没有对应动作或消费入口；
+- 绑定/解绑域名等上游用户面板功能与 `ClientArea`/`ClientAreaOutput`：属平台模板/面板侧能力，无对应物。
+
+验证：`gofmt` / `go build ./...` / `go vet` / `vue-tsc --noEmit`。
+
+> 备注：仓库既有的 `baota` Provider 面向宝塔面板的站点接口（`sites?action=*`），与本轮的 `/api/vhost/*` 不是同一上游，两者并存。
