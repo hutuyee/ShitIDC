@@ -299,6 +299,12 @@ func (a *App) registerAdminRoutes(g *gin.RouterGroup) {
 	g.POST("/sms-providers/:id/default", a.require("settings.manage"), a.csrf(), a.adminSetDefaultSmsProvider)
 	g.DELETE("/sms-providers/:id", a.require("settings.manage"), a.csrf(), a.adminDeleteSmsProvider)
 	g.GET("/sms-messages", a.require("settings.manage"), a.adminListSmsMessages)
+	// 邮件通道（SMTP 之外的 API 邮件服务；没有启用中的通道时回退内置 SMTP）
+	g.GET("/mail-providers", a.require("settings.manage"), a.adminListMailProviders)
+	g.POST("/mail-providers", a.require("settings.manage"), a.csrf(), a.adminCreateMailProvider)
+	g.POST("/mail-providers/:id/default", a.require("settings.manage"), a.csrf(), a.adminSetDefaultMailProvider)
+	g.POST("/mail-providers/:id/test", a.require("settings.manage"), a.csrf(), a.adminTestMailProvider)
+	g.DELETE("/mail-providers/:id", a.require("settings.manage"), a.csrf(), a.adminDeleteMailProvider)
 	// 第三方登录通道
 	g.GET("/oauth-providers", a.require("settings.manage"), a.adminListOAuthProviders)
 	g.POST("/oauth-providers", a.require("settings.manage"), a.csrf(), a.adminSaveOAuthProvider)
@@ -566,15 +572,16 @@ func (a *App) health(c *gin.Context) {
 }
 
 func (a *App) authConfig(c *gin.Context) {
-	mail, err := a.Store.GetMailSettings(c)
+	mailSettings, err := a.Store.GetMailSettings(c)
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		httpx.Fail(c, 500, "INTERNAL_ERROR", "读取邮件配置失败")
 		return
 	}
-	smtpEnabled := mail.SMTPHost != "" && mail.SMTPFrom != "" && mail.SMTPPort > 0
+	// 「邮件服务已配置」= 启用中的邮件通道或内置 SMTP 任一可用。
+	mailEnabled := a.mailConfigured(c)
 	httpx.OK(c, 200, map[string]bool{
-		"email_verify_required": mail.VerifyRequired && smtpEnabled,
-		"smtp_enabled":          smtpEnabled,
+		"email_verify_required": mailSettings.VerifyRequired && mailEnabled,
+		"smtp_enabled":          mailEnabled,
 		"captcha_enabled":       a.captchaEnabled(),
 	})
 }
@@ -605,7 +612,7 @@ func (a *App) register(c *gin.Context) {
 		httpx.Fail(c, 500, "INTERNAL_ERROR", "读取邮件配置失败")
 		return
 	}
-	smtpEnabled := mailSettings.SMTPHost != "" && mailSettings.SMTPFrom != "" && mailSettings.SMTPPort > 0
+	mailEnabled := a.mailConfigured(c)
 	hash, err := security.HashPassword(in.Password)
 	if err != nil {
 		httpx.Fail(c, 400, "WEAK_PASSWORD", err.Error())
@@ -616,7 +623,7 @@ func (a *App) register(c *gin.Context) {
 	verified := false
 	code := strings.TrimSpace(in.Code)
 	switch {
-	case mailSettings.VerifyRequired && smtpEnabled:
+	case mailSettings.VerifyRequired && mailEnabled:
 		if len(code) != 6 {
 			httpx.Fail(c, 400, "CODE_REQUIRED", "请输入邮箱验证码")
 			return
@@ -627,7 +634,7 @@ func (a *App) register(c *gin.Context) {
 		}
 		verified = true
 	case code != "":
-		if !smtpEnabled {
+		if !mailEnabled {
 			httpx.Fail(c, 400, "SMTP_NOT_CONFIGURED", "邮件服务未配置，无法校验邮箱验证码")
 			return
 		}
@@ -675,9 +682,11 @@ func (a *App) sendEmailCode(c *gin.Context) {
 		httpx.Fail(c, 400, "INVALID_EMAIL", "邮箱格式错误")
 		return
 	}
-	settings, err := a.Store.GetMailSettings(c)
-	if err != nil || settings.SMTPHost == "" || settings.SMTPFrom == "" || settings.SMTPPort <= 0 {
-		httpx.Fail(c, 503, "SMTP_NOT_CONFIGURED", "邮件服务未配置，请联系管理员在后台设置 SMTP")
+	// 发送前先解析出可用的发信方式（通道优先，SMTP 兜底），
+	// 未配置时直接拒绝，绝不把验证码写进库再让邮件发不出去。
+	sender, _, err := a.resolveMailSender(c)
+	if err != nil {
+		httpx.Fail(c, 503, "SMTP_NOT_CONFIGURED", "邮件服务未配置，请联系管理员在后台设置邮件通道或 SMTP")
 		return
 	}
 	code, err := security.NumericCode(6)
@@ -693,12 +702,6 @@ func (a *App) sendEmailCode(c *gin.Context) {
 		httpx.Fail(c, 500, "INTERNAL_ERROR", "保存验证码失败")
 		return
 	}
-	opts := mail.Options{Host: settings.SMTPHost, Port: settings.SMTPPort, Username: settings.SMTPUsername, From: settings.SMTPFrom, Encryption: settings.SMTPEncryption}
-	if settings.SMTPPasswordEn != "" && len(a.Cfg.MasterKey) == 32 {
-		if plain, derr := security.Decrypt(a.Cfg.MasterKey, settings.SMTPPasswordEn); derr == nil {
-			opts.Password = plain
-		}
-	}
 	verSubject, verBody := mail.VerificationMail(code)
 	subject, body := a.renderMail("email_verification", verSubject, verBody, map[string]string{"code": code, "email": in.Email})
 	if a.Queue != nil {
@@ -710,7 +713,7 @@ func (a *App) sendEmailCode(c *gin.Context) {
 	} else {
 		ctx, cancel := context.WithTimeout(c, 20*time.Second)
 		defer cancel()
-		if err := opts.Send(ctx, in.Email, subject, body); err != nil {
+		if err := sender(ctx, in.Email, subject, body); err != nil {
 			httpx.Fail(c, 502, "MAIL_SEND_FAILED", "验证码邮件发送失败: "+err.Error())
 			return
 		}
@@ -863,8 +866,7 @@ func (a *App) login(c *gin.Context) {
 		return
 	}
 	if settings, serr := a.Store.GetMailSettings(c); serr == nil {
-		smtpEnabled := settings.SMTPHost != "" && settings.SMTPFrom != "" && settings.SMTPPort > 0
-		if settings.VerifyRequired && smtpEnabled && !creds.User.EmailVerified {
+		if settings.VerifyRequired && a.mailConfigured(c) && !creds.User.EmailVerified {
 			httpx.Fail(c, 403, "EMAIL_NOT_VERIFIED", "邮箱未验证，请先通过验证码完成验证")
 			return
 		}

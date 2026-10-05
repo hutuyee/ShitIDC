@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"strings"
 
@@ -224,14 +225,14 @@ func (a *App) adminTestMail(c *gin.Context) {
 	if to == "" {
 		to = p.User.Email
 	}
-	opts, err := a.mailOptions(c)
+	sender, channel, err := a.resolveMailSender(c)
 	if err != nil {
 		httpx.Fail(c, 503, "SMTP_NOT_CONFIGURED", err.Error())
 		return
 	}
-	subject := "ShitIDC SMTP 测试邮件"
-	body := `<p>这是一封来自 ShitIDC 后台的测试邮件。收到即表示 SMTP 配置正确。</p>`
-	if err := opts.Send(c, to, subject, body); err != nil {
+	subject := "ShitIDC 测试邮件"
+	body := `<p>这是一封来自 ShitIDC 后台的测试邮件。收到即表示「` + channel + `」配置正确。</p>`
+	if err := sender(c, to, subject, body); err != nil {
 		httpx.Fail(c, 502, "MAIL_SEND_FAILED", err.Error())
 		return
 	}
@@ -240,8 +241,8 @@ func (a *App) adminTestMail(c *gin.Context) {
 }
 
 // mailOptions assembles SMTP options from stored settings, decrypting the password.
-func (a *App) mailOptions(c *gin.Context) (mail.Options, error) {
-	s, err := a.Store.GetMailSettings(c)
+func (a *App) mailOptions(ctx context.Context) (mail.Options, error) {
+	s, err := a.Store.GetMailSettings(ctx)
 	if err != nil {
 		return mail.Options{}, errors.New("邮件服务未配置")
 	}

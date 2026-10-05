@@ -689,3 +689,32 @@ HTTPS 端点、测试可覆盖。
 至此魔方参考源中协议可读的全部插件类型（gateway 14 个、server 4 个、
 sms 7 个、oauth 4 个、certification 6 个）在 ShitIDC 都有对应实现或等价能力。
 剩余差距只有 §4 表里两类 ionCube 加密的模块。
+
+---
+
+## 10. 邮件通道与附属插件补齐（本轮补齐）
+
+§9 的「收尾」只覆盖了五类插件；复扫 CBAP 插件包与安装目录后发现，
+魔方还有 `mail`（邮件通道）一整类，以及 `captcha` / `oss` / `addon` 等
+此前没有逐项对照的类别。本节起按类别补齐。
+
+### 10.1 邮件通道（`internal/mail`）
+
+此前 ShitIDC 只有内置 SMTP 一条发信路径。现在与短信同构做成注册表：
+`mail_providers` 表 + 后台「邮件通道」面板，一个站点可配多条、一条默认、
+凭据加密入库、发送结果记健康度（last_ok_at / last_error）。
+
+| 通道 | 协议 | 关键点 |
+|---|---|---|
+| `alimail` 阿里云邮件推送 | RPC 风格 POST dm.aliyuncs.com，`Action=SingleSendMail` | 签名 HMAC-SHA1 与阿里云短信同源；编码三差异（空格→%20、*→%2A、~ 保持）与短信实现一致 |
+| `subemail` 赛邮邮件 | POST api.mysubmail.com/mail/send 表单 | `signature=appkey`；错误码表翻成人话 |
+| `btmail` 宝塔邮局 | POST {面板}/mail_sys/send_mail_http.json | 成功判据是布尔 `status===true`；面板默认自签证书，`insecure_tls` 默认可跳过（可显式关闭） |
+| `generic` 通用 HTTP | 模板化请求 | `{{to}}/{{subject}}/{{body}}/{{secret:KEY}}` 占位符；未引用的凭据占位符清空 |
+
+**解析顺序：启用中的通道优先，未配置通道时回退内置 SMTP**。回退只在
+「没有通道」时发生，通道发送失败不会静默换身份重发——否则同一站点用两个
+发件人发信，收件人看到的来源会漂移。注册/登录页的「邮件服务是否可用」判断
+同步改为通道 OR SMTP，避免只配了通道却提示未配置。
+
+顺带修掉一个真实缺陷：后台短信/第三方登录面板按 `public_id` 找通道 ID，
+而接口序列化的是 `id`，导致「设为默认 / 停用 / 删除」实际传 `undefined` 全部 404。

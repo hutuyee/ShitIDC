@@ -191,6 +191,82 @@ async function deleteSms(id: string) {
   try { await api.delete(`/admin/sms-providers/${id}`); await loadSmsProviders() } catch (e: any) { message.error(e?.response?.data?.error?.message || '删除失败') }
 }
 
+// ---- 邮件通道（对应魔方 public/plugins/mail/；未配置任何通道时回退上方 SMTP）----
+const MAIL_FIELD_SPECS: Record<string, FieldSpec[]> = {
+  alimail: [
+    { key: 'account_name', label: '发信地址（如 noreply@yourdomain.com）' },
+    { key: 'from_alias', label: '发信人昵称', optional: true },
+    { key: 'access_key_id', label: 'AccessKey ID', secret: true },
+    { key: 'access_key_secret', label: 'AccessKey Secret', secret: true },
+  ],
+  subemail: [
+    { key: 'app_id', label: '应用 ID' }, { key: 'from_address', label: '发件人地址' },
+    { key: 'from_name', label: '发件人名称', optional: true },
+    { key: 'app_key', label: '应用密钥', secret: true },
+  ],
+  btmail: [
+    { key: 'host', label: '宝塔面板地址（https://ip:8888）' }, { key: 'from_address', label: '发件地址' },
+    { key: 'insecure_tls', label: '跳过 TLS 校验（默认开启，宝塔自签证书）false 关闭', optional: true },
+    { key: 'password', label: '邮箱密码', secret: true },
+  ],
+  generic: [
+    { key: 'endpoint', label: '请求地址' },
+    { key: 'method', label: '请求方法 GET/POST（默认 POST）', optional: true },
+    { key: 'content_type', label: '内容类型 form/json（默认 form）', optional: true },
+    { key: 'body_template', label: '请求体模板（{{to}}/{{subject}}/{{body}}/{{secret:KEY}}）', optional: true, area: true },
+    { key: 'success_keyword', label: '成功关键字（留空 2xx 即成功）', optional: true },
+  ],
+}
+const mailProviders = ref<any[]>([])
+const mailAvailable = ref<string[]>([])
+const mailForm = reactive({ name: '', provider: 'alimail' } as { name: string; provider: string; values: Record<string, string> })
+mailForm.values = {}
+const mailSaving = ref(false)
+const mailFieldSpecs = () => MAIL_FIELD_SPECS[mailForm.provider] || []
+const mailChannelLabels: Record<string, string> = {
+  alimail: '阿里云邮件推送', subemail: '赛邮邮件', btmail: '宝塔邮局', generic: '通用 HTTP',
+}
+function pickMailProvider(p: string) {
+  mailForm.provider = p
+  mailForm.values = {}
+}
+async function loadMailProviders() {
+  try {
+    const d = dataOf<any>(await api.get('/admin/mail-providers'))
+    mailProviders.value = d.providers || []
+    mailAvailable.value = d.available || []
+  } catch { /* ignore */ }
+}
+async function saveMailProvider() {
+  if (!mailForm.name.trim()) { message.warning('请填写通道名称'); return }
+  const config: Record<string, string> = {}
+  const secret: Record<string, string> = {}
+  for (const spec of mailFieldSpecs()) {
+    const v = (mailForm.values[spec.key] || '').trim()
+    if (!v) continue
+    if (spec.secret) secret[spec.key] = v
+    else config[spec.key] = v
+  }
+  mailSaving.value = true
+  try {
+    await api.post('/admin/mail-providers', { name: mailForm.name.trim(), provider: mailForm.provider, config, secret, is_default: mailProviders.value.length === 0 })
+    message.success('邮件通道已保存')
+    mailForm.name = ''
+    mailForm.values = {}
+    await loadMailProviders()
+  } catch (e: any) { message.error(e?.response?.data?.error?.message || '保存失败') }
+  finally { mailSaving.value = false }
+}
+async function setDefaultMail(id: string) {
+  try { await api.post(`/admin/mail-providers/${id}/default`); await loadMailProviders() } catch (e: any) { message.error(e?.response?.data?.error?.message || '设置失败') }
+}
+async function deleteMail(id: string) {
+  try { await api.delete(`/admin/mail-providers/${id}`); await loadMailProviders() } catch (e: any) { message.error(e?.response?.data?.error?.message || '删除失败') }
+}
+async function testMailChannel(id: string) {
+  try { await api.post(`/admin/mail-providers/${id}/test`); message.success('测试邮件已发送到你的账号邮箱') } catch (e: any) { message.error(e?.response?.data?.error?.message || '发送失败') }
+}
+
 // ---- 第三方登录（对应魔方 public/plugins/oauth/）----
 const OAUTH_FIELD_SPECS: Record<string, FieldSpec[]> = {
   github: [
@@ -255,7 +331,7 @@ async function saveOauthProvider() {
   finally { oauthSaving.value = false }
 }
 async function toggleOauth(p: any) {
-  try { await api.post(`/admin/oauth-providers/${p.public_id}/toggle`, { active: !p.active }); await loadOauthProviders() } catch (e: any) { message.error(e?.response?.data?.error?.message || '操作失败') }
+  try { await api.post(`/admin/oauth-providers/${p.public_id || p.id}/toggle`, { active: !p.active }); await loadOauthProviders() } catch (e: any) { message.error(e?.response?.data?.error?.message || '操作失败') }
 }
 async function deleteOauth(id: string) {
   try { await api.delete(`/admin/oauth-providers/${id}`); await loadOauthProviders() } catch (e: any) { message.error(e?.response?.data?.error?.message || '删除失败') }
@@ -289,7 +365,7 @@ async function load() {
   try {
     templates.value = dataOf<any[]>(await api.get('/admin/mail-templates'))
   } catch { templates.value = [] }
-  await Promise.all([loadSmsProviders(), loadOauthProviders(), loadCertProviders()])
+  await Promise.all([loadSmsProviders(), loadMailProviders(), loadOauthProviders(), loadCertProviders()])
 }
 
 async function save() {
@@ -459,11 +535,11 @@ onMounted(load)
           </div>
           <NButton type="primary" :loading="smsSaving" @click="saveSmsProvider">添加通道</NButton>
           <div v-if="smsProviders.length" class="stack">
-            <div v-for="p in smsProviders" :key="p.public_id" class="advanced-row">
+            <div v-for="p in smsProviders" :key="p.public_id || p.id" class="advanced-row">
               <div><b>{{ p.name }}</b><small>{{ smsChannelLabels[p.provider] || p.provider }}<template v-if="p.is_default"> · 默认</template><template v-if="p.last_error"> · 最近错误：{{ p.last_error }}</template></small></div>
               <div class="row" style="gap:8px">
-                <NButton v-if="!p.is_default" size="small" secondary @click="setDefaultSms(p.public_id)">设为默认</NButton>
-                <NButton size="small" quaternary type="error" @click="deleteSms(p.public_id)">删除</NButton>
+                <NButton v-if="!p.is_default" size="small" secondary @click="setDefaultSms(p.public_id || p.id)">设为默认</NButton>
+                <NButton size="small" quaternary type="error" @click="deleteSms(p.public_id || p.id)">删除</NButton>
               </div>
             </div>
           </div>
@@ -471,6 +547,41 @@ onMounted(load)
             <div class="panel-title-row"><div><h2>最近发送流水</h2><span>短信是花钱的，盗刷主要靠这张表排查</span></div></div>
             <div v-for="(m, i) in smsMessages" :key="i" class="advanced-row">
               <div><b>{{ m.phone }}</b><small>{{ m.purpose }} · {{ m.provider_name || m.provider || '-' }} · {{ m.success ? '成功' : '失败' }}<template v-if="m.error"> · {{ m.error }}</template></small></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-title-row"><div><h2>邮件通道</h2><span>API 邮件服务；配置后优先于上方 SMTP 发信，删除全部通道即回退 SMTP</span></div></div>
+      <div class="admin-two-col">
+        <div class="stack">
+          <div class="form-grid">
+            <label><span>通道名称</span><NInput v-model:value="mailForm.name" placeholder="例如：主用-阿里云" /></label>
+            <label><span>通道类型</span>
+              <select class="native-select" :value="mailForm.provider" @change="pickMailProvider(($event.target as HTMLSelectElement).value)">
+                <option v-for="p in mailAvailable" :key="p" :value="p">{{ mailChannelLabels[p] || p }}（{{ p }}）</option>
+              </select>
+            </label>
+          </div>
+          <div class="form-grid">
+            <label v-for="spec in mailFieldSpecs()" :key="spec.key" :class="{ full: spec.area }">
+              <span>{{ spec.label }}<template v-if="spec.secret">（凭据）</template><template v-if="spec.optional">（可选）</template></span>
+              <NInput v-if="spec.secret" v-model:value="mailForm.values[spec.key]" type="password" show-password-on="click" />
+              <NInput v-else-if="spec.area" v-model:value="mailForm.values[spec.key]" type="textarea" :rows="2" />
+              <NInput v-else v-model:value="mailForm.values[spec.key]" />
+            </label>
+          </div>
+          <NButton type="primary" :loading="mailSaving" @click="saveMailProvider">添加通道</NButton>
+          <div v-if="mailProviders.length" class="stack">
+            <div v-for="p in mailProviders" :key="p.id" class="advanced-row">
+              <div><b>{{ p.name }}</b><small>{{ mailChannelLabels[p.provider] || p.provider }}<template v-if="p.is_default"> · 默认</template><template v-if="p.last_error"> · 最近错误：{{ p.last_error }}</template></small></div>
+              <div class="row" style="gap:8px">
+                <NButton size="small" secondary @click="testMailChannel(p.id)">发测试邮件</NButton>
+                <NButton v-if="!p.is_default" size="small" secondary @click="setDefaultMail(p.id)">设为默认</NButton>
+                <NButton size="small" quaternary type="error" @click="deleteMail(p.id)">删除</NButton>
+              </div>
             </div>
           </div>
         </div>
@@ -499,11 +610,11 @@ onMounted(load)
           <div class="advanced-row"><div><b>允许自动注册</b><small>未绑定用户首次登录时自动建号（邮箱冲突会要求先绑定）</small></div><NCheckbox v-model:checked="oauthForm.allow_register" /></div>
           <NButton type="primary" :loading="oauthSaving" @click="saveOauthProvider">保存通道（凭据留空表示沿用已存值）</NButton>
           <div v-if="oauthProviders.length" class="stack">
-            <div v-for="p in oauthProviders" :key="p.public_id" class="advanced-row">
+            <div v-for="p in oauthProviders" :key="p.public_id || p.id" class="advanced-row">
               <div><b>{{ p.name || p.provider }}</b><small>{{ oauthChannelLabels[p.provider] || p.provider }}<template v-if="!p.active"> · 已停用</template><template v-if="p.last_error"> · 最近错误：{{ p.last_error }}</template></small></div>
               <div class="row" style="gap:8px">
                 <NButton size="small" secondary @click="toggleOauth(p)">{{ p.active ? '停用' : '启用' }}</NButton>
-                <NButton size="small" quaternary type="error" @click="deleteOauth(p.public_id)">删除</NButton>
+                <NButton size="small" quaternary type="error" @click="deleteOauth(p.public_id || p.id)">删除</NButton>
               </div>
             </div>
           </div>

@@ -308,6 +308,48 @@ func (w *worker) mailSend(ctx context.Context, t *asynq.Task) error {
 	if strings.TrimSpace(p.To) == "" {
 		return fmt.Errorf("%w: empty recipient", asynq.SkipRetry)
 	}
+	// 邮件通道优先；未配置通道时回退到内置 SMTP（与 API 侧解析顺序一致）。
+	pv, secretEnc, perr := w.st.ActiveMailProvider(ctx)
+	if perr == nil {
+		impl, ok := mail.Get(pv.Provider)
+		if !ok {
+			return fmt.Errorf("%w: unknown mail provider %s", asynq.SkipRetry, pv.Provider)
+		}
+		secret := mail.Secret{}
+		if strings.TrimSpace(secretEnc) != "" {
+			if len(w.cfg.MasterKey) == 0 {
+				return fmt.Errorf("%w: MASTER_KEY_BASE64 missing, cannot decrypt mail secret", asynq.SkipRetry)
+			}
+			plain, derr := security.Decrypt(w.cfg.MasterKey, secretEnc)
+			if derr != nil {
+				return fmt.Errorf("%w: mail secret decrypt failed", asynq.SkipRetry)
+			}
+			var m map[string]string
+			if jerr := json.Unmarshal([]byte(plain), &m); jerr != nil {
+				return fmt.Errorf("%w: mail secret is not valid json", asynq.SkipRetry)
+			}
+			secret = mail.Secret(m)
+		}
+		cfg := mail.Config{Provider: pv.Provider, Fields: pv.Config}
+		if verr := impl.Validate(cfg, secret); verr != nil {
+			return fmt.Errorf("%w: %v", asynq.SkipRetry, verr)
+		}
+		sctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		serr := impl.Send(sctx, cfg, secret, mail.Message{To: p.To, Subject: p.Subject, HTML: p.Body})
+		errStr := ""
+		if serr != nil {
+			errStr = serr.Error()
+		}
+		w.st.TouchMailProvider(sctx, pv.PublicID, serr == nil, errStr)
+		if serr != nil {
+			return fmt.Errorf("mail provider %s: %w", pv.Provider, serr)
+		}
+		return nil
+	}
+	if !errors.Is(perr, store.ErrNotFound) {
+		return fmt.Errorf("read active mail provider: %w", perr)
+	}
 	settings, err := w.st.GetMailSettings(ctx)
 	if err != nil {
 		return fmt.Errorf("%w: SMTP not configured: %v", asynq.SkipRetry, err)

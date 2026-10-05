@@ -12,8 +12,6 @@ import (
 
 	"github.com/hutuyee/ShitIDC/internal/events"
 	"github.com/hutuyee/ShitIDC/internal/httpx"
-	"github.com/hutuyee/ShitIDC/internal/mail"
-	"github.com/hutuyee/ShitIDC/internal/security"
 	"github.com/hutuyee/ShitIDC/internal/store"
 )
 
@@ -196,26 +194,14 @@ func (a *App) mailTicketNotification(_ *gin.Context, subject, ticketID string, t
 		if strings.TrimSpace(to) == "" {
 			return
 		}
-		settings, err := a.Store.GetMailSettings(ctx)
-		if err != nil {
-			return // SMTP not configured; in-app conversation still works
-		}
-		opts := mail.Options{Host: settings.SMTPHost, Port: settings.SMTPPort, Username: settings.SMTPUsername, From: settings.SMTPFrom, Encryption: settings.SMTPEncryption}
-		if !opts.Enabled() {
-			return
-		}
-		if settings.SMTPPasswordEn != "" {
-			plain, derr := security.Decrypt(a.Cfg.MasterKey, settings.SMTPPasswordEn)
-			if derr != nil {
-				log.Printf("ticket notify: decrypt smtp password: %v", derr)
-				return
-			}
-			opts.Password = plain
+		if !a.mailConfigured(ctx) {
+			return // 邮件服务未配置；站内会话仍然可用
 		}
 		var recipients []string
 		if toUser {
 			recipients = []string{to}
 		} else {
+			var err error
 			recipients, err = a.Store.TicketStaffEmails(ctx)
 			if err != nil || len(recipients) == 0 {
 				return
@@ -229,12 +215,8 @@ func (a *App) mailTicketNotification(_ *gin.Context, subject, ticketID string, t
 		escaped := html.EscapeString(body)
 		htmlBody := "<p>您的工单有新的" + side + "回复：</p><blockquote>" + strings.ReplaceAll(escaped, "\n", "<br/>") + "</blockquote><p>请登录用户中心在「工单」中查看并继续对话。</p>"
 		for _, rcpt := range recipients {
-			if a.Queue != nil {
-				_ = a.Queue.MailSend(rcpt, mailSubject, htmlBody)
-				continue
-			}
 			mctx, mcancel := context.WithTimeout(context.Background(), 25*time.Second)
-			if err := opts.Send(mctx, rcpt, mailSubject, htmlBody); err != nil {
+			if err := a.deliverMail(mctx, rcpt, mailSubject, htmlBody); err != nil {
 				log.Printf("ticket notify mail to %s failed: %v", rcpt, err)
 			}
 			mcancel()
