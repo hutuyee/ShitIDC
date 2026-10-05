@@ -963,7 +963,7 @@ CBAP 仓库 `plugins/addon/` 下 30 个 zip 经逐个检查：**包内全部 `.p
 | 包 | 前端可读线索 | 判定 |
 |---|---|---|
 | AbnormalInspectionRecords | 异常记录：关联产品、标签、导出 | 已对齐（§10.18） |
-| ClientCare | 客户关怀：邮件/站内信、周期推送、指定用户 | 未落地 |
+| ClientCare | 客户关怀：邮件/站内信、周期推送、指定用户 | 已对齐（§10.28） |
 | ClientCustomField | 客户自定义字段（管理列表/申请） | 已对齐（§10.19） |
 | CostPay | 支出记录：来源/主体/金额/日期 | 已对齐（§10.17） |
 | CreditLimit | 授信：消费记录、混合支付 | 已对齐（授信账户 + 后台授信管理） |
@@ -995,7 +995,7 @@ CBAP 仓库 `plugins/addon/` 下 30 个 zip 经逐个检查：**包内全部 `.p
 
 主程序包 `zjmf-finance/public/plugins/addons/` 的 5 个（demo_style 示例、expired_ip_log / export_excel 已对齐见 §10.8、expired_auto_delete_bill 与 product_divert 主类 ionCube 加密）本轮复核无变化。
 
-说明：未落地项的共同原因是「服务端加密 + 无对外契约」；其中多数（ClientCare、IdcsmartRecommend、ManualResource 等）站内已有可复用的骨架（商品 / 服务 / 通知 / 事件），后续可逐个按其前端资产可见的字段面直接设计实现，无需参考加密代码。
+说明：未落地项的共同原因是「服务端加密 + 无对外契约」；其中多数（IdcsmartRecommend、ManualResource 等）站内已有可复用的骨架（商品 / 服务 / 通知 / 事件），后续可逐个按其前端资产可见的字段面直接设计实现，无需参考加密代码。
 
 验证：本轮纯审计与文档，无代码改动。
 
@@ -1275,3 +1275,19 @@ CBAP 包 `addon/FlowPacket.zip` 主类加密，前端资产可读：后台两个
 
 验证：`gofmt` / `go build ./...` / `go vet ./...` 与 `npx vue-tsc --noEmit` 全部通过。
 
+### 10.28 ClientCare 插件（客户关怀）（本轮补齐）
+
+CBAP 包 `addon/ClientCare.zip` 主类加密，前端资产可读：后台「客户关怀」列表（列：通知标题 / 推送内容 / 推送时间 / 推送周期 / 推送状态，状态含 Wait 待执行 / Exec 执行中 / Suspended 已暂停 / Expired 已失效 / Finish 已完成，行操作启停 / 删除）与新建表单（通知标题、通知形式 1 站内信 / 2 短信+邮件、推送内容、邮件标题、邮件通道与模板、短信通道与模板、推送时间范围、推送周期 onetime/day/week/month + 周几 / 月几 / 时分、同用户重复发送开关、推送目标条件构造器）；用户端 `GET /client_care/mail/{id}` 站内信详情（含上一篇 / 下一篇）。本轮按该契约落地：
+
+| 维度 | 参考实现 | ShitIDC 落地 |
+|---|---|---|
+| 任务字段 | title / type / content / subject / email_name / sms_name / sms_template_id / push_start_time / push_end_time / send_cycle / week_day / month_day / hour / minute / repeat_send / push_object | client_care_jobs 表（043 迁移）按同名落库；type 1 站内信 / 2 短信+邮件 |
+| 推送周期 | onetime / day / week / month + 周几 / 月几 / 时分 | 调度器每 1 分钟执行到期任务并推进 next_run_at；未到开始时间自动顺延，超出结束时间置为已失效 |
+| 圈人条件 | push_object：condition1 client/host/server；二级 client/register_time/last_login_time/host_num/active_host_num/owner_special_product、host/status/purchase_time/termination_time、server/product；三级比较符 >= 或 <、枚举数组；condition4 数值或日期；condition5 day/date | 条件翻译为 users WHERE（含服务 EXISTS 子查询）：状态映射 未付款→pending、待开通→provisioning、生效中→active、已暂停→suspended、已删除→terminated、开通失败→failed、已取消忽略；指定产品 / 接口按公开 ID 子查询匹配 |
+| 后台接口 | /client_care 列表 / 新建 / 启停 / 删除 / 名单预览 / 发送预览 | GET/POST /admin/client-care、PUT /admin/client-care/:id/status、DELETE /admin/client-care/:id、POST /admin/client-care/recipients（返回 count + 名单）、GET /admin/client-care/options（产品 / 接口 / 邮件通道 / 邮件模板）、GET /admin/client-care/users（client_care.manage 权限 + CSRF + 审计） |
+| 投递 | 站内信 + 邮件（+短信） | 到点写入 client_care_mails 收件箱并生成站内通知（链接 /messages/{id}）；邮件类任务按 email_name（邮件通道公开 ID，空 = 默认通道）经 mail.send 队列投递；短信自定义内容本站通道只支持验证码模板，暂不投递（字段保留） |
+| 用户端 | 站内信详情（上一篇 / 下一篇） | 用户中心「消息」页：列表 + 详情（自动标记已读、上一篇 / 下一篇）；接口 GET /client-care/mails、GET /client-care/mails/:id、POST /client-care/mails/:id/read |
+
+说明：repeat_send 关闭时同一任务对同一用户只投递一次（按 job_id + user_id 去重）；推送时间点（时 / 分）按服务器本地时区解释；邮件模板仅用于快速填充邮件标题，邮件正文取推送内容。
+
+验证：`gofmt` / `go build ./...` / `go vet ./...` 与 `npx vue-tsc --noEmit` 全部通过。
