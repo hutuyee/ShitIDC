@@ -58,7 +58,11 @@ func (a *App) listPaymentMethods(c *gin.Context) {
 			}
 		}
 		if len(payTypes) == 0 {
-			payTypes = []string{"alipay", "wxpay"}
+			if strings.EqualFold(v.Method, "manual") {
+				payTypes = []string{"manual"}
+			} else {
+				payTypes = []string{"alipay", "wxpay"}
+			}
 		}
 		out = append(out, map[string]any{"id": v.PublicID, "name": v.Name, "method": v.Method, "pay_types": payTypes})
 	}
@@ -92,6 +96,13 @@ func (a *App) payOrderOnline(c *gin.Context) {
 		return
 	case err != nil:
 		httpx.Fail(c, 400, "PAYMENT_PREPARE_FAILED", err.Error())
+		return
+	}
+	if strings.EqualFold(prepared.Provider.Method, "manual") {
+		// 线下支付（user_custom 对齐）：不跳转网关，把后台配置的收款说明
+		// 原样返回给前端展示，等管理员在后台「确认收款」完结订单。
+		_ = a.Store.Audit(c, p.User.ID, "order.pay_online", "order", c.Param("id"), c.GetString("request_id"), clientIP(c), c.Request.UserAgent(), nil, map[string]any{"provider": prepared.Provider.Name, "pay_type": "manual", "manual": true})
+		httpx.OK(c, 200, map[string]any{"html": manualPayMessage(prepared.Provider.Config), "out_trade_no": prepared.OutTradeNo, "need_confirm": true})
 		return
 	}
 	payURL, err := a.gatewayPayURL(c, prepared)
@@ -135,6 +146,15 @@ func (a *App) rechargeWallet(c *gin.Context) {
 	}
 	_ = a.Store.Audit(c, p.User.ID, "recharge.create", "wallet", prepared.OutTradeNo, c.GetString("request_id"), clientIP(c), c.Request.UserAgent(), nil, map[string]any{"amount_cents": in.AmountCents, "provider": prepared.Provider.Name})
 	httpx.OK(c, 200, map[string]any{"pay_url": payURL, "out_trade_no": prepared.OutTradeNo})
+}
+
+// manualPayMessage 取线下支付渠道的收款说明（HTML）；与魔方 user_custom
+// 插件把 seller_id 字段 htmlspecialchars_decode 后原样展示的口径一致。
+func manualPayMessage(cfg map[string]any) string {
+	if s, ok := cfg["message"].(string); ok {
+		return strings.TrimSpace(s)
+	}
+	return ""
 }
 
 // gatewayPayURL decrypts the provider secret and asks the registered gateway
@@ -258,31 +278,7 @@ func (a *App) payNotify(c *gin.Context) {
 	kind, userID, serviceIDs, renewServiceID, err := a.Store.CompleteOnlinePayment(c, outTradeNo, strings.TrimSpace(res.TradeNo), res.AmountCents)
 	switch {
 	case err == nil:
-		_ = a.Store.Audit(c, userID, "payment.completed", "payment", outTradeNo, c.GetString("request_id"), clientIP(c), c.Request.UserAgent(), nil, map[string]any{"kind": kind, "amount_cents": res.AmountCents, "method": method})
-		// 推广系统: credit the referrer after a successful online payment.
-		if kind == "order" {
-			if settings, serr := a.Store.GetReferralSettings(c); serr == nil && settings.Enabled {
-				if _, cerr := a.Store.PayReferralCommission(c, outTradeNo, settings.Percent); cerr != nil {
-					log.Printf("referral commission failed for %s: %v", outTradeNo, cerr)
-				}
-			}
-		}
-		if kind == "order" {
-			if renewServiceID != "" {
-				if a.Queue != nil {
-					_ = a.Queue.ServiceRenew(renewServiceID)
-				}
-			}
-			for _, id := range serviceIDs {
-				if a.Queue != nil {
-					_ = a.Queue.Provision(id)
-				}
-			}
-			a.Bus.Emit(a.eventCtx(c), events.OrderPaid, map[string]any{"order_id": outTradeNo, "uid": userID, "method": method, "amount_cents": res.AmountCents, "kind": kind})
-			a.Bus.Emit(a.eventCtx(c), events.InvoicePaid, map[string]any{"order_id": outTradeNo, "uid": userID, "amount_cents": res.AmountCents})
-		} else {
-			a.Bus.Emit(a.eventCtx(c), events.WalletRecharged, map[string]any{"out_trade_no": outTradeNo, "uid": userID, "amount_cents": res.AmountCents})
-		}
+		a.afterPaymentCompleted(c, method, outTradeNo, res.AmountCents, kind, userID, serviceIDs, renewServiceID)
 	case errors.Is(err, store.ErrAlreadyCompleted):
 		// duplicate notify: acknowledge without re-processing (§15 Idempotency)
 	case errors.Is(err, store.ErrAmountMismatch):
@@ -294,6 +290,32 @@ func (a *App) payNotify(c *gin.Context) {
 		return
 	}
 	c.String(http.StatusOK, "success")
+}
+
+// afterPaymentCompleted 是支付完结后的公共收尾：审计、推广佣金、开通/续费
+// 入队与事件广播。在线回调与后台「确认收款」共用，保证两条路径行为一致。
+func (a *App) afterPaymentCompleted(c *gin.Context, method, outTradeNo string, amountCents int64, kind string, userID int64, serviceIDs []string, renewServiceID string) {
+	_ = a.Store.Audit(c, userID, "payment.completed", "payment", outTradeNo, c.GetString("request_id"), clientIP(c), c.Request.UserAgent(), nil, map[string]any{"kind": kind, "amount_cents": amountCents, "method": method})
+	if kind != "order" {
+		a.Bus.Emit(a.eventCtx(c), events.WalletRecharged, map[string]any{"out_trade_no": outTradeNo, "uid": userID, "amount_cents": amountCents})
+		return
+	}
+	// 推广系统: credit the referrer after a successful online payment.
+	if settings, serr := a.Store.GetReferralSettings(c); serr == nil && settings.Enabled {
+		if _, cerr := a.Store.PayReferralCommission(c, outTradeNo, settings.Percent); cerr != nil {
+			log.Printf("referral commission failed for %s: %v", outTradeNo, cerr)
+		}
+	}
+	if renewServiceID != "" && a.Queue != nil {
+		_ = a.Queue.ServiceRenew(renewServiceID)
+	}
+	for _, id := range serviceIDs {
+		if a.Queue != nil {
+			_ = a.Queue.Provision(id)
+		}
+	}
+	a.Bus.Emit(a.eventCtx(c), events.OrderPaid, map[string]any{"order_id": outTradeNo, "uid": userID, "method": method, "amount_cents": amountCents, "kind": kind})
+	a.Bus.Emit(a.eventCtx(c), events.InvoicePaid, map[string]any{"order_id": outTradeNo, "uid": userID, "amount_cents": amountCents})
 }
 
 // payReturn is the browser redirect back from the gateway; the real state

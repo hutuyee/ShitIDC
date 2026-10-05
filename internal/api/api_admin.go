@@ -36,7 +36,7 @@ func (a *App) adminListOrders(c *gin.Context) {
 // ---- online payment providers ----
 
 func sanitizePayTypes(raw []string) []string {
-	allowed := map[string]bool{"alipay": true, "wxpay": true, "qqpay": true, "bank": true, "jiedebao": true, "paypal": true, "usdt": true, "epay": true}
+	allowed := map[string]bool{"alipay": true, "wxpay": true, "qqpay": true, "bank": true, "jiedebao": true, "paypal": true, "usdt": true, "epay": true, "manual": true}
 	out := []string{}
 	for _, t := range raw {
 		t = strings.ToLower(strings.TrimSpace(t))
@@ -68,6 +68,7 @@ func (a *App) adminCreatePaymentProvider(c *gin.Context) {
 		MerchantID string   `json:"merchant_id"`
 		Secret     string   `json:"secret"`
 		PayTypes   []string `json:"pay_types"`
+		Message    string   `json:"message"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
 		httpx.Fail(c, 400, "INVALID_REQUEST", "请求格式错误")
@@ -87,12 +88,23 @@ func (a *App) adminCreatePaymentProvider(c *gin.Context) {
 		httpx.Fail(c, 400, "INVALID_REQUEST", "支付方式名称不能为空")
 		return
 	}
-	enc, err := security.Encrypt(a.Cfg.MasterKey, in.Secret)
-	if err != nil {
-		httpx.Fail(c, 500, "MASTER_KEY_INVALID", "MASTER_KEY_BASE64 未正确配置，无法安全保存支付密钥")
-		return
+	var enc string
+	if in.Method != "manual" {
+		var err error
+		enc, err = security.Encrypt(a.Cfg.MasterKey, in.Secret)
+		if err != nil {
+			httpx.Fail(c, 500, "MASTER_KEY_INVALID", "MASTER_KEY_BASE64 未正确配置，无法安全保存支付密钥")
+			return
+		}
 	}
 	cfg := map[string]any{"pay_types": sanitizePayTypes(in.PayTypes)}
+	if in.Method == "manual" {
+		// 线下支付不需要网关参数：渠道固定 manual，密钥留空，说明存 config.message。
+		cfg["pay_types"] = []string{"manual"}
+	}
+	if msg := strings.TrimSpace(in.Message); msg != "" {
+		cfg["message"] = msg
+	}
 	v, err := a.Store.CreatePaymentProvider(c, strings.TrimSpace(in.Name), in.Method, strings.TrimSpace(in.GatewayURL), strings.TrimSpace(in.MerchantID), enc, cfg)
 	if err != nil {
 		httpx.Fail(c, 400, "PAYMENT_PROVIDER_CREATE_FAILED", err.Error())
@@ -110,6 +122,7 @@ func (a *App) adminUpdatePaymentProvider(c *gin.Context) {
 		MerchantID string   `json:"merchant_id"`
 		Secret     string   `json:"secret"`
 		PayTypes   []string `json:"pay_types"`
+		Message    string   `json:"message"`
 		Active     *bool    `json:"active"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
@@ -120,9 +133,17 @@ func (a *App) adminUpdatePaymentProvider(c *gin.Context) {
 	if in.Active != nil {
 		active = *in.Active
 	}
+	current, _, err := a.Store.GetPaymentProviderCredentials(c, c.Param("id"))
+	if errors.Is(err, store.ErrNotFound) {
+		httpx.Fail(c, 404, "PAYMENT_PROVIDER_NOT_FOUND", "支付方式不存在")
+		return
+	}
+	if err != nil {
+		httpx.Fail(c, 500, "INTERNAL_ERROR", "读取支付方式失败")
+		return
+	}
 	enc := ""
-	if strings.TrimSpace(in.Secret) != "" {
-		var err error
+	if !strings.EqualFold(current.Method, "manual") && strings.TrimSpace(in.Secret) != "" {
 		enc, err = security.Encrypt(a.Cfg.MasterKey, in.Secret)
 		if err != nil {
 			httpx.Fail(c, 500, "MASTER_KEY_INVALID", "MASTER_KEY_BASE64 未正确配置，无法安全保存支付密钥")
@@ -130,6 +151,19 @@ func (a *App) adminUpdatePaymentProvider(c *gin.Context) {
 		}
 	}
 	cfg := map[string]any{"pay_types": sanitizePayTypes(in.PayTypes)}
+	msg := strings.TrimSpace(in.Message)
+	if msg == "" {
+		if old, ok := current.Config["message"].(string); ok {
+			msg = strings.TrimSpace(old)
+		}
+	}
+	if strings.EqualFold(current.Method, "manual") {
+		// 线下支付：渠道固定 manual、永远没有密钥；收款说明允许清空。
+		cfg["pay_types"] = []string{"manual"}
+		cfg["message"] = msg
+	} else if msg != "" {
+		cfg["message"] = msg
+	}
 	v, err := a.Store.UpdatePaymentProvider(c, c.Param("id"), strings.TrimSpace(in.Name), strings.TrimSpace(in.GatewayURL), strings.TrimSpace(in.MerchantID), enc, cfg, active)
 	if err != nil {
 		httpx.Fail(c, 400, "PAYMENT_PROVIDER_UPDATE_FAILED", err.Error())

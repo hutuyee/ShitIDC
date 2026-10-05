@@ -400,6 +400,7 @@ func (a *App) registerAdminRoutes(g *gin.RouterGroup) {
 	g.POST("/services/:id/suspend", a.require("service.manage"), a.csrf(), a.adminSuspendService)
 	g.POST("/services/:id/unsuspend", a.require("service.manage"), a.csrf(), a.adminUnsuspendService)
 	g.POST("/services/:id/terminate", a.require("service.manage"), a.csrf(), a.adminTerminateService)
+	g.POST("/orders/:id/confirm-payment", a.require("wallet.adjust"), a.csrf(), a.adminConfirmOrderPayment)
 	g.POST("/orders/:id/refund", a.require("wallet.adjust"), a.csrf(), a.adminRefundOrder)
 	g.GET("/refunds", a.require("wallet.adjust"), a.adminListRefunds)
 	g.GET("/webhooks", a.require("webhook.manage"), a.adminListWebhooks)

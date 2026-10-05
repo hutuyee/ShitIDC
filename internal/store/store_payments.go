@@ -172,6 +172,46 @@ VALUES($1,$2,$3,$4,$5,$6,'pending',$7::jsonb)`, userID, orderID, pv.Method, outT
 	return PreparedPayment{Provider: pv, Secret: secret, OutTradeNo: outTradeNo, AmountCents: total, Currency: currency, Subject: subject, PayType: payType}, nil
 }
 
+// EnsureOrderPendingPayment 锁定未支付订单并返回后台「确认收款」使用的
+// pending 支付单：已有在线支付单就复用，用户从未发起在线支付时补建一条
+// method=manual 的登记单。返回 out_trade_no、金额与下单用户 id。
+func (s *Store) EnsureOrderPendingPayment(ctx context.Context, orderPublicID string) (string, int64, int64, error) {
+	tx, err := s.DB.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
+	if err != nil {
+		return "", 0, 0, err
+	}
+	defer tx.Rollback(ctx)
+	var orderID, total, userID int64
+	var currency, status string
+	err = tx.QueryRow(ctx, `SELECT id,total_cents,currency,status,user_id FROM orders WHERE public_id=$1 FOR UPDATE`, orderPublicID).Scan(&orderID, &total, &currency, &status, &userID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", 0, 0, ErrNotFound
+	}
+	if err != nil {
+		return "", 0, 0, err
+	}
+	if status != "unpaid" {
+		return "", 0, 0, ErrInvalidState
+	}
+	outTradeNo := "O" + strings.ReplaceAll(orderPublicID, "-", "")
+	amountCents := total
+	err = tx.QueryRow(ctx, `SELECT transaction_id,amount_cents FROM payments WHERE order_id=$1 AND status='pending' FOR UPDATE`, orderID).Scan(&outTradeNo, &amountCents)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return "", 0, 0, err
+	}
+	if errors.Is(err, pgx.ErrNoRows) {
+		rawJSON, _ := json.Marshal(map[string]any{"kind": "order", "pay_type": "manual"})
+		if _, err := tx.Exec(ctx, `INSERT INTO payments(user_id,order_id,method,transaction_id,amount_cents,currency,status,raw_payload)
+VALUES($1,$2,'manual',$3,$4,$5,'pending',$6::jsonb)`, userID, orderID, outTradeNo, total, currency, string(rawJSON)); err != nil {
+			return "", 0, 0, err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return "", 0, 0, err
+	}
+	return outTradeNo, amountCents, userID, nil
+}
+
 func firstPayType(cfg map[string]any) string {
 	if v, ok := cfg["pay_types"].([]any); ok && len(v) > 0 {
 		if s, ok := v[0].(string); ok && s != "" {
@@ -195,6 +235,9 @@ FROM payment_providers WHERE public_id=$1 AND active=true`, providerPublicID).Sc
 			return PreparedPayment{}, ErrNotFound
 		}
 		return PreparedPayment{}, err
+	}
+	if strings.EqualFold(pv.Method, "manual") {
+		return PreparedPayment{}, errors.New("线下支付不支持余额充值，请选择在线支付渠道")
 	}
 	rawJSON, _ := json.Marshal(map[string]any{"kind": "recharge", "provider": pv.PublicID, "pay_type": payType})
 	raw := string(rawJSON)

@@ -12,15 +12,20 @@ const payModal = ref(false)
 const payOrder = ref<any>(null)
 const payChoice = ref<string | null>(null)
 const busy = ref(false)
+const manualModal = ref(false)
+const manualHTML = ref('')
+const manualOrder = ref<any>(null)
+const manualOutTradeNo = ref('')
 
 const payOptions = computed(() => {
   const opts: { label: string; value: string }[] = []
-  const label: Record<string, string> = { alipay: '支付宝', wxpay: '微信支付', qqpay: 'QQ 钱包', bank: '网银', jiedebao: '捷德宝', paypal: 'PayPal', usdt: 'USDT', epay: '余额/通用' }
+  const label: Record<string, string> = { alipay: '支付宝', wxpay: '微信支付', qqpay: 'QQ 钱包', bank: '网银', jiedebao: '捷德宝', paypal: 'PayPal', usdt: 'USDT', epay: '余额/通用', manual: '线下支付' }
   for (const m of methods.value) {
     for (const t of m.pay_types || []) opts.push({ label: `${m.name} · ${label[t] || t}`, value: `${m.id}|${t}` })
   }
   return opts
 })
+const payChoiceManual = computed(() => (payChoice.value || '').split('|')[1] === 'manual')
 
 async function load() {
   try {
@@ -56,7 +61,17 @@ async function submitOnlinePay() {
   const [provider, payType] = payChoice.value.split('|')
   busy.value = true
   try {
-    const r = dataOf<{ pay_url: string }>(await api.post(`/orders/${payOrder.value.id}/pay/online`, { provider_id: provider, pay_type: payType }))
+    const r = dataOf<{ pay_url?: string; html?: string; need_confirm?: boolean; out_trade_no?: string }>(await api.post(`/orders/${payOrder.value.id}/pay/online`, { provider_id: provider, pay_type: payType }))
+    if (r?.need_confirm || r?.html) {
+      // 线下支付（user_custom 对齐）：展示后台配置的收款说明，等待管理员确认收款。
+      manualOrder.value = payOrder.value
+      manualHTML.value = r?.html || ''
+      manualOutTradeNo.value = r?.out_trade_no || ''
+      payModal.value = false
+      manualModal.value = true
+      await load()
+      return
+    }
     if (r?.pay_url) window.location.href = r.pay_url
   } catch (e: any) {
     message.error(e?.response?.data?.error?.message || '创建支付失败')
@@ -82,7 +97,7 @@ const statusType = (s: string) => ({ unpaid: 'warning', processing: 'info', paid
 const payTypeLabel: Record<string, string> = { alipay: '支付宝', wxpay: '微信支付', qqpay: 'QQ钱包' }
 const methodText = (o: any) => {
   if (!o.payment) return ''
-  const base = ({ wallet: '余额支付', epay: '在线支付' } as Record<string, string>)[o.payment.method] || o.payment.method
+  const base = ({ wallet: '余额支付', epay: '在线支付', manual: '线下支付' } as Record<string, string>)[o.payment.method] || o.payment.method
   const t = o.payment.type ? '（' + (payTypeLabel[o.payment.type] || o.payment.type) + '）' : ''
   return base + t
 }
@@ -132,7 +147,7 @@ onMounted(load)
           </small>
           <div class="order-actions">
             <NButton v-if="o.status === 'unpaid'" size="small" type="primary" @click="payWallet(o)">余额支付</NButton>
-            <NButton v-if="o.status === 'unpaid' && payOptions.length" size="small" type="primary" secondary @click="openOnlinePay(o)">在线支付</NButton>
+            <NButton v-if="o.status === 'unpaid' && payOptions.length" size="small" type="primary" secondary @click="openOnlinePay(o)">选择支付方式</NButton>
             <NButton v-if="o.status === 'unpaid'" size="small" quaternary type="error" @click="cancelOrder(o)">取消订单</NButton>
           </div>
         </footer>
@@ -143,8 +158,17 @@ onMounted(load)
       <div class="stack">
         <div v-if="payOrder" class="muted">订单金额：<b class="money">{{ money(payOrder.total_cents, payOrder.currency) }}</b></div>
         <NSelect v-model:value="payChoice" :options="payOptions" placeholder="选择支付渠道" />
-        <div class="security-note">点击确认后会跳转到支付平台完成付款，支付完成后自动返回本站并开通服务。</div>
-        <NButton type="primary" block :loading="busy" :disabled="!payChoice" @click="submitOnlinePay">跳转支付</NButton>
+        <div class="security-note">{{ payChoiceManual ? '确认后将展示线下收款说明，请按说明付款并等待管理员确认收款。' : '点击确认后会跳转到支付平台完成付款，支付完成后自动返回本站并开通服务。' }}</div>
+        <NButton type="primary" block :loading="busy" :disabled="!payChoice" @click="submitOnlinePay">{{ payChoiceManual ? '查看收款说明' : '跳转支付' }}</NButton>
+      </div>
+    </NModal>
+
+    <NModal v-model:show="manualModal" preset="card" title="线下支付" style="width:min(480px,92vw)">
+      <div class="stack">
+        <div v-if="manualOrder" class="muted">订单金额：<b class="money">{{ money(manualOrder.total_cents, manualOrder.currency) }}</b></div>
+        <div class="manual-html" v-html="manualHTML || '请联系管理员获取收款方式。'"></div>
+        <div class="security-note">转账时请在备注中填写订单号 <code>{{ manualOutTradeNo }}</code>；管理员确认收款后自动开通服务。</div>
+        <NButton type="primary" block @click="manualModal = false">我知道了</NButton>
       </div>
     </NModal>
   </div>

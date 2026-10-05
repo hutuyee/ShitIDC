@@ -52,12 +52,23 @@ async function doRefund() {
   } finally { refundBusy.value = false }
 }
 
+async function confirmPayment(o: any) {
+  if (!window.confirm(`确认已收到订单 ${String(o.id).slice(0, 8)} 的付款？确认后订单将标记为已支付并自动开通服务。`)) return
+  try {
+    await api.post(`/admin/orders/${o.id}/confirm-payment`)
+    message.success('已确认收款')
+    await load()
+  } catch (e: any) {
+    message.error(e?.response?.data?.error?.message || '确认收款失败')
+  }
+}
+
 onMounted(load)
 </script>
 
 <template>
   <div class="admin-page">
-    <div class="admin-page-head"><div><div class="eyebrow">订单中心</div><h1>全部订单与退款</h1><p>全站订单流水；钱包支付且已完成的订单可以按冲正交易方式退款，原始资金流水永不修改。</p></div><NButton :loading="loading" secondary @click="load">刷新</NButton></div>
+    <div class="admin-page-head"><div><div class="eyebrow">订单中心</div><h1>全部订单与退款</h1><p>全站订单流水；未支付订单可确认线下收款，钱包支付且已完成的订单可以按冲正交易方式退款，原始资金流水永不修改。</p></div><NButton :loading="loading" secondary @click="load">刷新</NButton></div>
 
     <section class="panel">
       <div class="panel-title-row"><div><h2>订单列表</h2><span>最近 {{ orders.length }} 条</span></div></div>
@@ -71,7 +82,11 @@ onMounted(load)
           <span><NTag :type="statusType(o.status)" size="small" round>{{ statusText(o.status) || o.status }}</NTag></span>
           <span class="muted">{{ o.payment ? `${o.payment.method}${o.payment.type ? ' / ' + o.payment.type : ''}` : (o.status === 'unpaid' ? '未支付' : '钱包') }}</span>
           <span class="muted">{{ fmt(o.created_at) }}</span>
-          <span><NButton v-if="o.status === 'completed'" size="tiny" tertiary type="warning" @click="openRefund(o)">退款</NButton><span v-else class="muted">—</span></span>
+          <span>
+            <NButton v-if="o.status === 'completed'" size="tiny" tertiary type="warning" @click="openRefund(o)">退款</NButton>
+            <NButton v-else-if="o.status === 'unpaid'" size="tiny" tertiary type="primary" @click="confirmPayment(o)">确认收款</NButton>
+            <span v-else class="muted">—</span>
+          </span>
         </div>
       </div></div>
       <div v-else class="empty-box">暂无订单。</div>

@@ -20,7 +20,10 @@ const label: Record<string, string> = { alipay: '支付宝', wxpay: '微信支�
 const payOptions = computed(() => {
   const opts: { label: string; value: string }[] = []
   for (const m of methods.value) {
-    for (const t of m.pay_types || []) opts.push({ label: `${m.name} · ${label[t] || t}`, value: `${m.id}|${t}` })
+    for (const t of m.pay_types || []) {
+      if (t === 'manual') continue
+      opts.push({ label: `${m.name} · ${label[t] || t}`, value: `${m.id}|${t}` })
+    }
   }
   return opts
 })

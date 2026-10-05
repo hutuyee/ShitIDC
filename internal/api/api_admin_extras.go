@@ -72,6 +72,42 @@ func (a *App) adminSuspendService(c *gin.Context)   { a.lifecycleHandler(c, "sus
 func (a *App) adminUnsuspendService(c *gin.Context) { a.lifecycleHandler(c, "unsuspend") }
 func (a *App) adminTerminateService(c *gin.Context) { a.lifecycleHandler(c, "terminate") }
 
+// ---- 线下支付确认收款（user_custom 对齐） ----
+
+// adminConfirmOrderPayment 把未支付订单的 pending 支付单标记为已完成，并走
+// 与在线回调完全相同的完结流程（发票/订单/服务/续费、推广佣金、事件广播）。
+// 对应魔方财务 user_custom 插件的「线下支付 + 后台确认收款」。
+func (a *App) adminConfirmOrderPayment(c *gin.Context) {
+	p, _ := getPrincipal(c)
+	outTradeNo, amountCents, userID, err := a.Store.EnsureOrderPendingPayment(c, c.Param("id"))
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		httpx.Fail(c, 404, "ORDER_NOT_FOUND", "订单不存在")
+		return
+	case errors.Is(err, store.ErrInvalidState):
+		httpx.Fail(c, 409, "ORDER_NOT_PAYABLE", "仅未支付的订单可以确认收款")
+		return
+	case err != nil:
+		httpx.Fail(c, 500, "INTERNAL_ERROR", "确认收款失败")
+		return
+	}
+	kind, uid, serviceIDs, renewServiceID, err := a.Store.CompleteOnlinePayment(c, outTradeNo, "manual", amountCents)
+	switch {
+	case errors.Is(err, store.ErrAlreadyCompleted):
+		httpx.Fail(c, 409, "ORDER_ALREADY_PAID", "该订单已完成收款")
+		return
+	case errors.Is(err, store.ErrAmountMismatch):
+		httpx.Fail(c, 409, "AMOUNT_MISMATCH", "支付金额与订单金额不一致")
+		return
+	case err != nil:
+		httpx.Fail(c, 500, "INTERNAL_ERROR", "确认收款失败")
+		return
+	}
+	_ = a.Store.Audit(c, p.User.ID, "order.confirm_payment", "order", c.Param("id"), c.GetString("request_id"), clientIP(c), c.Request.UserAgent(), nil, map[string]any{"out_trade_no": outTradeNo, "amount_cents": amountCents, "user_id": userID, "method": "manual"})
+	a.afterPaymentCompleted(c, "manual", outTradeNo, amountCents, kind, uid, serviceIDs, renewServiceID)
+	httpx.OK(c, 200, map[string]any{"order_id": c.Param("id"), "out_trade_no": outTradeNo, "amount_cents": amountCents, "status": "completed"})
+}
+
 // ---- refunds (冲正) ----
 
 func (a *App) adminRefundOrder(c *gin.Context) {
