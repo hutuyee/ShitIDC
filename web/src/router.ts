@@ -13,6 +13,7 @@ import Cart from './views/Cart.vue'
 import Wallet from './views/Wallet.vue'
 import Vouchers from './views/Vouchers.vue'
 import Services from './views/Services.vue'
+import FlowPackets from './views/FlowPackets.vue'
 import Tickets from './views/Tickets.vue'
 import TicketDetail from './views/TicketDetail.vue'
 import Profile from './views/Profile.vue'
@@ -21,6 +22,7 @@ import Admin from './views/Admin.vue'
 import AdminProviders from './views/AdminProviders.vue'
 import AdminServices from './views/AdminServices.vue'
 import AdminServiceTransfers from './views/AdminServiceTransfers.vue'
+import AdminFlowPackets from './views/AdminFlowPackets.vue'
 import AdminUsers from './views/AdminUsers.vue'
 import AdminTickets from './views/AdminTickets.vue'
 import AdminLogs from './views/AdminLogs.vue'
@@ -63,6 +65,7 @@ const router = createRouter({ history: createWebHistory(), routes: [
   { path: '/wallet', component: Wallet },
   { path: '/vouchers', component: Vouchers },
   { path: '/services', component: Services },
+  { path: '/flow-packets', component: FlowPackets },
   { path: '/tickets', component: Tickets },
   { path: '/tickets/:id', component: TicketDetail },
   { path: '/profile', component: Profile },
@@ -92,6 +95,7 @@ const router = createRouter({ history: createWebHistory(), routes: [
   { path: ADMIN_PATH + '/providers', component: AdminProviders },
   { path: ADMIN_PATH + '/services', component: AdminServices },
   { path: ADMIN_PATH + '/service-transfers', component: AdminServiceTransfers },
+  { path: ADMIN_PATH + '/flow-packets', component: AdminFlowPackets },
   { path: ADMIN_PATH + '/users', component: AdminUsers },
   { path: ADMIN_PATH + '/tickets', component: AdminTickets },
   { path: ADMIN_PATH + '/logs', component: AdminLogs },
