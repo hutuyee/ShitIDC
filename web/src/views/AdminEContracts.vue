@@ -31,6 +31,9 @@ async function loadContracts() {
   }
 }
 const detail = ref<any | null>(null)
+// 弹窗开关必须是可赋值的成员表达式（v-model 约束，生产模板编译器强制），
+// 所以用可写 computed 包一层而不是在模板里写 v-model:show="!!detail"。
+const showDetail = computed({ get: () => !!detail.value, set: (v: boolean) => { if (!v) detail.value = null } })
 async function openDetail(r: any) {
   try {
     detail.value = dataOf<any>(await api.get(`/admin/e-contracts/${r.id}`))
@@ -54,6 +57,7 @@ async function review(r: any, action: 'complete' | 'reject' | 'cancel') {
   }
 }
 const mailFor = ref('')
+const showMail = computed({ get: () => !!mailFor.value, set: (v: boolean) => { if (!v) mailFor.value = '' } })
 const mailForm = reactive({ courier_company: '', courier_number: '' })
 function openMail(r: any) {
   mailFor.value = r.id
@@ -118,6 +122,11 @@ function openTemplate(t?: any) {
 }
 function insertVar(k: string) {
   templateForm.detail += `{{${k}}}`
+}
+// 变量标签交给脚本拼接：模板插值里不能出现字面量 }}（会被当成插值结束符，
+// 生产构建的模板编译器会把它截断成未终止的表达式）。
+function varTag(k: string) {
+  return `{{${k}}}`
 }
 async function saveTemplate() {
   if (!templateForm.name.trim()) { message.error('请填写模板名称'); return }
@@ -274,7 +283,7 @@ onMounted(() => { loadContracts(); loadTemplates(); loadProducts(); loadSettings
     </section>
 
     <!-- 合同详情 -->
-    <NModal v-model:show="!!detail" preset="card" :title="`合同 ${detail?.number || ''}`" style="width:min(760px,94vw)">
+    <NModal v-model:show="showDetail" preset="card" :title="`合同 ${detail?.number || ''}`" style="width:min(760px,94vw)">
       <div class="muted" style="font-size:12px">客户：{{ detail?.user_email }} ｜ 订单：{{ detail?.order_id }} ｜ 状态：{{ statusText[detail?.status] || '' }}<template v-if="detail?.reason"> ｜ 理由：{{ detail.reason }}</template></div>
       <div class="ec-content" v-html="detail?.content"></div>
       <div v-if="detail?.has_sign" style="margin-top:12px"><span class="muted" style="font-size:12px">客户签名：</span><img :src="detail?.sign_image" style="height:56px" alt="签名" /></div>
@@ -303,7 +312,7 @@ onMounted(() => { loadContracts(); loadTemplates(); loadProducts(); loadSettings
         </label>
       </div>
       <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:8px">
-        <NButton v-for="v in vars" :key="v.key" size="tiny" tertiary @click="insertVar(v.key)">{{ v.label }}（{{ '{{' + v.key + '}}' }}）</NButton>
+        <NButton v-for="v in vars" :key="v.key" size="tiny" tertiary @click="insertVar(v.key)">{{ v.label }}（{{ varTag(v.key) }}）</NButton>
       </div>
       <label class="full" style="margin-top:8px"><span>备注</span><NInput v-model:value="templateForm.notes" placeholder="备注" /></label>
       <div class="row" style="gap:8px;margin-top:14px">
@@ -313,7 +322,7 @@ onMounted(() => { loadContracts(); loadTemplates(); loadProducts(); loadSettings
     </NModal>
 
     <!-- 邮寄登记 -->
-    <NModal v-model:show="!!mailFor" preset="card" title="邮寄登记" style="width:min(440px,94vw)">
+    <NModal v-model:show="showMail" preset="card" title="邮寄登记" style="width:min(440px,94vw)">
       <div class="form-grid">
         <label class="full"><span>快递公司</span><NInput v-model:value="mailForm.courier_company" placeholder="快递公司" /></label>
         <label class="full"><span>快递单号</span><NInput v-model:value="mailForm.courier_number" placeholder="快递单号" /></label>

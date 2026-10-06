@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { NButton, NInput, NModal, NTag, useMessage } from 'naive-ui'
 import { api, dataOf } from '../api'
 
@@ -43,6 +43,8 @@ async function apply(o: any) {
 
 // ---- 签订（手写签名板） ----
 const signFor = ref<any>(null)
+// 同 AdminEContracts：v-model 的值必须是可赋值表达式，用可写 computed 包装。
+const showSign = computed({ get: () => !!signFor.value, set: (v: boolean) => { if (!v) signFor.value = null } })
 const canvas = ref<HTMLCanvasElement | null>(null)
 let drawing = false
 function openSign(c: any) {
@@ -164,7 +166,7 @@ onMounted(load)
     </section>
 
     <!-- 签名弹窗 -->
-    <NModal v-model:show="!!signFor" preset="card" :title="`签订合同 ${signFor?.number || ''}`" style="width:min(640px,94vw)">
+    <NModal v-model:show="showSign" preset="card" :title="`签订合同 ${signFor?.number || ''}`" style="width:min(640px,94vw)">
       <div class="sign-tip muted" style="font-size:13px;margin-bottom:8px">请在下方方框内手写签名，确认后提交（提交后进入管理员审核）。</div>
       <canvas
         ref="canvas" width="560" height="220"

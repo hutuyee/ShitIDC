@@ -1513,3 +1513,14 @@ CBAP 包 `addon/NoticeSendMerge.zip` 共 11 个文件：主类 / model / route /
 全量复核结论（按类目）：主程序包 8 个可枚举类目（addons / behavior / captcha / certification / firewall / gateways / mail / oauth / servers / sms）与 CBAP 包 12 个类目全部有「已对齐」或「有据跳过」的结论——addon/ 30 个见 §10.15，gateway 14 个见 §9.1/§10.7，server 7 个见 §9.2/§9.4/§10.12，sms 7+6 个见 §8.1/§10.3，oauth 4+7 个见 §8.2/§10.2，certification 6+6 个见 §10.5/§10.6，captcha 2 个见 §10.4，mail 4+3 个见 §10.1 + 本轮，oss 见 §10.14，widget / sub_server / template 见 §10.10~§10.13，addons 5 个见 §10.8 + §10.38 + §10.39。剩余差距仍然只有 §4 表列出的两类 ionCube 加密模块（域名注册 / DirectAdmin·MfCloud 系列）。
 
 验证：`gofmt` / `go build ./...` / `go vet ./...` / `go test ./internal/...` 与 `npx vue-tsc --noEmit` 全部通过。
+
+### 10.41 生产构建修复：模板编译器比 vue-tsc 更严格（本轮补齐）
+
+Docker 首次完整构建（`npm run build` = `vue-tsc --noEmit && vite build`）暴露两个只被 vue-tsc 放过的模板写法，均出自 §10.36 电子合同的前端：
+
+- **插值里出现字面量 `}}`**（AdminEContracts.vue）：`{{ '{{' + v.key + '}}' }}` 的字符串常量 `'}}'` 中，`}}` 被生产模板编译器当作插值结束符提前截断，表达式变成未终止的 `'{{' + v.key + '`。vue-tsc 的解析器能正确配对括号所以放行。修复：标签拼接收进脚本函数 `varTag`，插值内不再出现字面量 `}}`；
+- **v-model 绑定不可赋值表达式**（AdminEContracts.vue / Contracts.vue 三处）：`v-model:show="!!detail"` —— v-model 的值必须是可赋值的成员表达式，类型上 boolean 合法所以 vue-tsc 通过，但生产编译器的 transformModel 直接抛错。修复：改用可写 computed 包装（get 判空、set 关弹窗）。
+
+经验：**vue-tsc 与 vite build 的模板解析不等价**，后续前端的完成标准统一为完整 `npm run build`（与 Docker 构建一致），不再只跑 `vue-tsc --noEmit`。本轮两个文件的修复已由完整构建验证通过。
+
+验证：`npm run build`（vue-tsc + vite build，2941 模块）全部通过。
