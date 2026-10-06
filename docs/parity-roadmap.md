@@ -990,7 +990,7 @@ CBAP 仓库 `plugins/addon/` 下 30 个 zip 经逐个检查：**包内全部 `.p
 | ProductNumLimit | 购买数量限制 | 已对齐（商品自带单客户限购） |
 | ProductRelatedLimit | 关联购买限制 | 已对齐（§10.20） |
 | TicketInternalPremium | 工单内部备注/内部工单 | 已对齐（§10.29） |
-| TicketPremium | 工单高级版（部门/字段/回执模板） | 部分（基础工单已有） |
+| TicketPremium | 工单高级版（部门/字段/回执模板） | 已对齐（§10.30） |
 | WanyunResource | 万云资源：自定义字段、节点 | 未落地 |
 
 主程序包 `zjmf-finance/public/plugins/addons/` 的 5 个（demo_style 示例、expired_ip_log / export_excel 已对齐见 §10.8、expired_auto_delete_bill 与 product_divert 主类 ionCube 加密）本轮复核无变化。
@@ -1310,5 +1310,28 @@ CBAP 包 `addon/TicketInternalPremium.zip` 主类加密，前端资产可读：�
 | 后台接口 | /admin/ticket-internal 全套 | tickets（列表 / 新建 / 详情 / 保存 / 日志 / 回复 / 接单 / 转单 / 关闭 / 处理完成 / 评分 / 备注）、department / status / prereply / config / staff / hosts / cron / statistics / rank（评分与时长按部门 / 个人）；权限 `ticket_internal.manage`（admin 默认授权） |
 
 说明：列表 / 详情中的附件字段保留但未接文件上传；提醒与通知均为站内通知；用户端无独立入口（内部工单面向管理员协作）。
+
+验证：`gofmt` / `go build ./...` / `go vet ./...` 与 `npx vue-tsc --noEmit` 全部通过。
+
+### 10.30 TicketPremium 插件（用户工单高级版）（本轮补齐）
+
+CBAP 包 `addon/TicketPremium.zip` 主类加密，前端资产可读：后台四个页面——工单列表（关键词 / 类型树 / 状态 / 用户 / 最后回复人 / 领取人 / 时间范围筛选与列表刷新，超时角标；行内接单 / 处理完成 / 关闭）、工单配置（部门设置 / 工单状态 / 预设回复 / 其他设置）、工单统计（单量 / 评分 / 超时占比与部门、个人排名）、代客建单；用户端工单页（提交工单 + 部门类型 + 关联产品 + 工单须知）、工单详情（沟通记录 / 附件 / 催单 / 评分）。本轮按该契约落地：
+
+| 维度 | 参考实现 | ShitIDC 落地 |
+|---|---|---|
+| 部门与类型 | 部门（名称 / 管理人员 / 主管）+ 类型（处理时限小时） | ticket_departments / ticket_types（045 迁移）；有工单引用时拒绝删除部门 / 类型 |
+| 工单状态 | 默认状态（待处理 / 待回复 / 已关闭）+ 自定义名称 / 颜色 / 完结状态 | ticket_statuses（key 唯一 + system 保护）；状态带颜色展示，完结状态自动同步 finished / finish_time 并计入「已处理」 |
+| 工单流转 | 用户提交 → 客服接单 → 回复 → 处理完成（可同时关闭）→ 用户评分 | 编号 `T+日期+5 位序号`；ticket_receive_reply=1 时未接单不可回复，ticket_follow_reply=1 时仅领取人可回复；处理完成写 finish_time |
+| 详情与协作 | 沟通记录 + 内部备注 + 操作日志 + 预设回复 | ticket_notes / ticket_logs / ticket_prereplies；详情页回复（可带附件）、备注、预设回复弹窗、日志弹窗、编辑 / 删除回复与备注 |
+| 关联产品与附件 | 工单选关联产品，回复可带附件 | tickets.host_ids 关联服务；回复附件走 ticket_attachments（单文件 ≤5MB、扩展名与内容双重校验） |
+| 催单 | 用户催单，15 分钟内不可重复 | tickets.last_urge_time / urge_count；催单写站内通知给客服并发送邮件 |
+| 评分 | 满意度 / 服务态度 / 处理时效三项 0.5–5 星，完成后评分一次 | tickets.is_score / satisfaction / attitude / processing_time / score_time；仅已处理完成的工单可评分且只可评一次 |
+| 转内部工单 | 用户工单转内部工单继续流转 | /admin/ticket-premium/tickets/:id/turn-internal 复用内部工单表并写来源日志 |
+| 统计 | 单量 / 处理时长 / 评分 / 超时占比；按部门与个人排名 | 后台「工单统计」页：日期范围 + 范围（所有部门 / 按部门 / 按个人），统计卡 + 平均分排名 + 时长排名 |
+| 邮件模板 | 客户建单 / 客户回复 / 客服回复 / 客户关闭 四个内置模板 | ticket_client_create / ticket_client_reply / ticket_admin_reply / ticket_client_close，可在「邮件模板」页覆盖 |
+| 其他设置 | 接单后回复 / 仅领取人回复 / 工单须知 / 刷新时间 | ticket_config（ticket_receive_reply / ticket_follow_reply / ticket_notice_open / ticket_notice_description / refresh_time）；用户提交页展示工单须知 |
+| 后台接口 | /admin/ticket-premium 全套 | tickets（列表 / 代建 / 详情 / 回复 / 接单 / 保存 / 状态 / 处理完成 / 备注 / 日志 / 转内部）、department / status / prereply / config / staff / hosts / statistics / rank（评分与时长按部门 / 个人）；用户侧 /tickets/meta、departments、hosts、:id/urge、:id/score；权限 `ticket.manage` |
+
+说明：短信通知未接入（保留与插件一致的邮件 + 站内通知）；「字段说明」未单独建模——部门 / 类型即其等价结构；用户新建工单的附件在回复环节上传；列表与详情中的操作日志、催单、评分均落库可查。
 
 验证：`gofmt` / `go build ./...` / `go vet ./...` 与 `npx vue-tsc --noEmit` 全部通过。
