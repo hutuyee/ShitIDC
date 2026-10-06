@@ -300,11 +300,21 @@ func (a *App) afterPaymentCompleted(c *gin.Context, method, outTradeNo string, a
 		a.Bus.Emit(a.eventCtx(c), events.WalletRecharged, map[string]any{"out_trade_no": outTradeNo, "uid": userID, "amount_cents": amountCents})
 		return
 	}
-	// 推广系统: credit the referrer after a successful online payment.
-	if settings, serr := a.Store.GetReferralSettings(c); serr == nil && settings.Enabled {
-		if _, cerr := a.Store.PayReferralCommission(c, outTradeNo, settings.Percent); cerr != nil {
-			log.Printf("referral commission failed for %s: %v", outTradeNo, cerr)
+	// 推广系统：推荐人开启过推介计划（IdcsmartRecommend 插件）时按商品比例记奖励
+	// 记录（待确认 / 已确认，提现走推介计划）；否则退回旧的即时返佣（按订单总额
+	// 比例直接入余额）。两者互斥，同一订单不会重复发放。
+	promoterID, awarded, rerr := a.Store.AccrueRecommendAwards(c, outTradeNo)
+	if rerr != nil {
+		log.Printf("recommend awards failed for %s: %v", outTradeNo, rerr)
+	}
+	if promoterID == 0 {
+		if settings, serr := a.Store.GetReferralSettings(c); serr == nil && settings.Enabled {
+			if _, cerr := a.Store.PayReferralCommission(c, outTradeNo, settings.Percent); cerr != nil {
+				log.Printf("referral commission failed for %s: %v", outTradeNo, cerr)
+			}
 		}
+	} else if awarded > 0 {
+		a.recommendNotifyAward(c, promoterID, awarded)
 	}
 	// 商品返现：支付成功后按商品规则返到买家余额（幂等同订单只返一次）。
 	if _, cerr := a.Store.PayProductCashback(c, outTradeNo); cerr != nil {
