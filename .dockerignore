@@ -1,0 +1,8 @@
+# 构建上下文瘦身：Go 与 web 构建都用不到这些（此前上下文 500MB+，纯搬运浪费）。
+# 注意 docs/ 不能忽略：docker/Dockerfile.api 运行镜像里有 COPY docs /app/docs。
+.git
+_zjmf_ref
+web/node_modules
+web/dist
+worker.exe
+*.log
