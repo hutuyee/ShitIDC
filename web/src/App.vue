@@ -102,6 +102,8 @@ function toggleTheme() {
             <div class="admin-label">管理后台</div>
             <router-link :to="ADMIN_PATH">控制台</router-link>
             <router-link v-if="auth.permissions['ticket.manage']" :to="ADMIN_PATH + '/tickets'">工单客服</router-link>
+            <router-link v-if="auth.permissions['ticket.manage']" :to="ADMIN_PATH + '/tickets/settings'">工单配置</router-link>
+            <router-link v-if="auth.permissions['ticket.manage']" :to="ADMIN_PATH + '/tickets/stats'">工单统计</router-link>
             <router-link v-if="auth.permissions['ticket_internal.manage']" :to="ADMIN_PATH + '/ticket-internal'">内部工单</router-link>
             <router-link v-if="auth.permissions['user.read']" :to="ADMIN_PATH + '/users'">用户列表</router-link>
             <router-link v-if="auth.permissions['user.read']" :to="ADMIN_PATH + '/client-fields'">用户字段</router-link>

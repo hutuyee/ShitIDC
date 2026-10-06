@@ -32,6 +32,9 @@ import AdminTicketInternalCron from './views/AdminTicketInternalCron.vue'
 import AdminTicketInternalStats from './views/AdminTicketInternalStats.vue'
 import AdminUsers from './views/AdminUsers.vue'
 import AdminTickets from './views/AdminTickets.vue'
+import AdminTicketPremiumDetail from './views/AdminTicketPremiumDetail.vue'
+import AdminTicketPremiumSettings from './views/AdminTicketPremiumSettings.vue'
+import AdminTicketPremiumStats from './views/AdminTicketPremiumStats.vue'
 import AdminLogs from './views/AdminLogs.vue'
 import AdminSettings from './views/AdminSettings.vue'
 import AdminPayments from './views/AdminPayments.vue'
@@ -113,6 +116,9 @@ const router = createRouter({ history: createWebHistory(), routes: [
   { path: ADMIN_PATH + '/ticket-internal/:id', component: AdminTicketInternalDetail },
   { path: ADMIN_PATH + '/users', component: AdminUsers },
   { path: ADMIN_PATH + '/tickets', component: AdminTickets },
+  { path: ADMIN_PATH + '/tickets/settings', component: AdminTicketPremiumSettings },
+  { path: ADMIN_PATH + '/tickets/stats', component: AdminTicketPremiumStats },
+  { path: ADMIN_PATH + '/tickets/:id', component: AdminTicketPremiumDetail },
   { path: ADMIN_PATH + '/logs', component: AdminLogs },
   { path: ADMIN_PATH + '/settings', component: AdminSettings },
   { path: ADMIN_PATH + '/payments', component: AdminPayments },
