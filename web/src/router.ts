@@ -58,6 +58,8 @@ import AdminExpiredIpLogs from './views/AdminExpiredIpLogs.vue'
 import AdminAgents from './views/AdminAgents.vue'
 import AdminExtThemes from './views/AdminExtThemes.vue'
 import Referral from './views/Referral.vue'
+import AdminRecommend from './views/AdminRecommend.vue'
+import AdminRecommendConfig from './views/AdminRecommendConfig.vue'
 import NotFound from './views/NotFound.vue'
 import { useAuthStore } from './stores/auth'
 import { ADMIN_PATH } from './adminPath'
@@ -102,6 +104,8 @@ const router = createRouter({ history: createWebHistory(), routes: [
   { path: ADMIN_PATH + '/agents', component: AdminAgents },
   { path: ADMIN_PATH + '/ext-themes', component: AdminExtThemes },
   { path: '/referral', component: Referral },
+  { path: ADMIN_PATH + '/recommend', component: AdminRecommend },
+  { path: ADMIN_PATH + '/recommend/config', component: AdminRecommendConfig },
   { path: ADMIN_PATH + '/products', component: AdminProducts },
   { path: ADMIN_PATH + '/announcements', component: AdminAnnouncements },
   { path: ADMIN_PATH + '/providers', component: AdminProviders },
