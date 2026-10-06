@@ -138,6 +138,7 @@ function toggleTheme() {
             <router-link v-if="auth.permissions['service.manage']" :to="ADMIN_PATH + '/inspection-records'">异常巡查</router-link>
             <router-link v-if="auth.permissions['wanyun_resource.manage']" :to="ADMIN_PATH + '/wanyun-resource'">万云资源</router-link>
             <router-link v-if="auth.permissions['manual_resource.manage']" :to="ADMIN_PATH + '/manual-resources'">手动资源</router-link>
+            <router-link v-if="auth.permissions['sale.manage']" :to="ADMIN_PATH + '/sales'">业务经理</router-link>
             <router-link v-if="auth.permissions['provider.manage']" :to="ADMIN_PATH + '/settings'">邮件 / SMTP</router-link>
             <router-link v-if="auth.permissions['provider.manage']" :to="ADMIN_PATH + '/providers'">供应商 / 上游</router-link>
             <div class="grow"></div>

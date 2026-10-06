@@ -320,6 +320,12 @@ func (a *App) afterPaymentCompleted(c *gin.Context, method, outTradeNo string, a
 	if _, cerr := a.Store.PayProductCashback(c, outTradeNo); cerr != nil {
 		log.Printf("product cashback failed for %s: %v", outTradeNo, cerr)
 	}
+	// 业务经理：客户绑定销售时按提成规则记提成（幂等，确认天数后生效）。
+	if n, cerr := a.Store.AccrueSaleCommission(c, outTradeNo); cerr != nil {
+		log.Printf("sale commission failed for %s: %v", outTradeNo, cerr)
+	} else if n > 0 {
+		log.Printf("sale commission accrued %d entries for %s", n, outTradeNo)
+	}
 	if renewServiceID != "" && a.Queue != nil {
 		_ = a.Queue.ServiceRenew(renewServiceID)
 	}
