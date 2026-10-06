@@ -217,23 +217,50 @@ type Service struct {
 }
 
 type Ticket struct {
-	PublicID         string     `json:"id"`
-	Subject          string     `json:"subject"`
-	Status           string     `json:"status"`
-	Priority         string     `json:"priority"`
-	UserUID          int64      `json:"user_uid,omitempty"`
-	UserEmail        string     `json:"user_email,omitempty"`
-	LastReplyAt      *time.Time `json:"last_reply_at,omitempty"`
-	LastReplyIsStaff bool       `json:"last_reply_is_staff"`
-	CreatedAt        time.Time  `json:"created_at"`
+	PublicID           string     `json:"id"`
+	Number             string     `json:"ticket_num,omitempty"`
+	Subject            string     `json:"subject"`
+	Status             string     `json:"status"`
+	StatusName         string     `json:"status_name,omitempty"`
+	StatusColor        string     `json:"color,omitempty"`
+	Finished           bool       `json:"finished"`
+	Priority           string     `json:"priority"`
+	UserUID            int64      `json:"user_uid,omitempty"`
+	UserEmail          string     `json:"user_email,omitempty"`
+	DepartmentID       int64      `json:"department_id,omitempty"`
+	DepartmentName     string     `json:"department_name,omitempty"`
+	TicketTypeID       int64      `json:"ticket_type_id,omitempty"`
+	TypeName           string     `json:"name,omitempty"`
+	AdminUID           int64      `json:"admin_id,omitempty"`
+	AdminName          string     `json:"admin_name,omitempty"`
+	LastReplyAdminUID  int64      `json:"last_reply_admin_id,omitempty"`
+	LastReplyAdminName string     `json:"last_reply_admin_name,omitempty"`
+	PostAdminUID       int64      `json:"post_admin_id,omitempty"`
+	PostAdminName      string     `json:"post_admin_name,omitempty"`
+	HostIDs            []int64    `json:"host_ids,omitempty"`
+	AttachmentIDs      []string   `json:"attachment,omitempty"`
+	IsScore            bool       `json:"is_score"`
+	Satisfaction       float64    `json:"satisfaction,omitempty"`
+	Attitude           float64    `json:"attitude,omitempty"`
+	ScoreProcessing    float64    `json:"score_processing,omitempty"`
+	FinishTime         *time.Time `json:"finish_time,omitempty"`
+	ScoreTime          *time.Time `json:"score_time,omitempty"`
+	LastUrgeTime       *time.Time `json:"last_urge_time,omitempty"`
+	UrgeCount          int        `json:"urge_count,omitempty"`
+	DueTime            *time.Time `json:"due_time,omitempty"`
+	LastReplyAt        *time.Time `json:"last_reply_at,omitempty"`
+	LastReplyIsStaff   bool       `json:"last_reply_is_staff"`
+	CreatedAt          time.Time  `json:"created_at"`
 }
 
 type TicketMessage struct {
 	PublicID    string    `json:"id"`
 	SenderUID   int64     `json:"sender_uid"`
+	SenderName  string    `json:"sender_name,omitempty"`
 	SenderEmail string    `json:"sender_email"`
 	IsStaff     bool      `json:"is_staff"`
 	Body        string    `json:"body"`
+	Attachment  []string  `json:"attachment,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
 }
 
