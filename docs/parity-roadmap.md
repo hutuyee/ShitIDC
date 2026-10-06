@@ -976,7 +976,7 @@ CBAP 仓库 `plugins/addon/` 下 30 个 zip 经逐个检查：**包内全部 `.p
 | IdcsmartClientLevel | 客户等级：三级、商品可选、批量保存 | 已对齐（客户组差异定价，口径等价） |
 | IdcsmartDomain | 域名 | 跳过（§9.4） |
 | IdcsmartInvoice | 开票申请：抬头/快递/邮寄/驳回 | 已对齐（§10.24） |
-| IdcsmartRecommend | 推荐/关联商品：分组、排序、复制 | 未落地（商品页仅有「推荐商品」标记） |
+| IdcsmartRecommend | 推介计划：奖励记录、奖励比例、提现 | 已对齐（§10.31） |
 | IdcsmartSale | 销售统计：消费排名、时间窗图表 | 部分（统计页已有；业务经理维度见 §10.8 说明） |
 | IdcsmartStatistics | 统计图表 | 已对齐（后台统计/仪表盘） |
 | IdcsmartVoucher | 代金券：发放/使用/次数 | 已对齐（§10.21） |
@@ -995,7 +995,7 @@ CBAP 仓库 `plugins/addon/` 下 30 个 zip 经逐个检查：**包内全部 `.p
 
 主程序包 `zjmf-finance/public/plugins/addons/` 的 5 个（demo_style 示例、expired_ip_log / export_excel 已对齐见 §10.8、expired_auto_delete_bill 与 product_divert 主类 ionCube 加密）本轮复核无变化。
 
-说明：未落地项的共同原因是「服务端加密 + 无对外契约」；其中多数（IdcsmartRecommend、ManualResource 等）站内已有可复用的骨架（商品 / 服务 / 通知 / 事件），后续可逐个按其前端资产可见的字段面直接设计实现，无需参考加密代码。
+说明：未落地项的共同原因是「服务端加密 + 无对外契约」；其中多数（ManualResource 等）站内已有可复用的骨架（商品 / 服务 / 通知 / 事件），后续可逐个按其前端资产可见的字段面直接设计实现，无需参考加密代码。（IdcsmartRecommend 已按此思路于后续轮次补齐，见 §10.31。）
 
 验证：本轮纯审计与文档，无代码改动。
 
@@ -1333,5 +1333,31 @@ CBAP 包 `addon/TicketPremium.zip` 主类加密，前端资产可读：后台四
 | 后台接口 | /admin/ticket-premium 全套 | tickets（列表 / 代建 / 详情 / 回复 / 接单 / 保存 / 状态 / 处理完成 / 备注 / 日志 / 转内部）、department / status / prereply / config / staff / hosts / statistics / rank（评分与时长按部门 / 个人）；用户侧 /tickets/meta、departments、hosts、:id/urge、:id/score；权限 `ticket.manage` |
 
 说明：短信通知未接入（保留与插件一致的邮件 + 站内通知）；「字段说明」未单独建模——部门 / 类型即其等价结构；用户新建工单的附件在回复环节上传；列表与详情中的操作日志、催单、评分均落库可查。
+
+验证：`gofmt` / `go build ./...` / `go vet ./...` 与 `npx vue-tsc --noEmit` 全部通过。
+
+### 10.31 IdcsmartRecommend 插件（推介计划）（本轮补齐）
+
+CBAP 包 `addon/IdcsmartRecommend.zip` 的 PHP（controller / model / logic / validate / route / lang）全部 ionCube 加密，前端资产可读：后台两页——「奖励记录」（推介人 / 被推介用户 / 商品 / 状态筛选，行内确认 / 冻结 / 解冻 / 置无效 / 改奖励金额 / 删除，预设无效回复弹窗）与「推介配置」（奖励存款 / 确认天数 / 最低提现金额 / 提现手续费 / 默认推介链接 / 系统页面链接 / 商品新购与续费比例 / 主打推介产品）；用户端「推介计划」页（未开启引导开启、可提现 / 已提现 / 待确认 / 已确认四卡、推介链接与建议推介产品、自定义链接、推介记录、提现记录、完整推介政策弹窗）；邮件模板 `recommend_notice.html`。接口契约取自 `template/admin/api/recommend.js` 与 `template/clientarea/api/referral.js`，字段与文案取自两端的 JS 语言包。本轮按该契约落地：
+
+| 维度 | 参考实现（插件前端契约） | ShitIDC 落地 |
+|---|---|---|
+| 奖励记录 | promoter / username / product_name / type（new 新购、renew 续费）/ buy_amount / ratio / awards_amount / surplus_time / status（Pending 待确认、Active 已确认、Frozen 冻结、Invalid 无效） | recommend_awards（046 迁移）：promoter_id / user_id / product_id / product_name / type / buy_amount_cents / ratio / awards_amount_cents / status / invalid_reason；`surplus_time` 为待确认剩余秒数，列表按确认时间换算展示 |
+| 推介配置 | awards 奖励存款 / day 确认天数（0=即刻确认，默认 14 天）/ withdraw_min / withdraw_handling_fee / default_url / system_url 多行 / ratios（product_id、ratio、amount、renew_ratio、renew_amount）/ products 主打产品 | system_settings.recommend 标量配置 + recommend_ratios / recommend_products 两表；`/admin/recommend/config` 读写，金额落「分」、比例落百分数 |
+| 奖励产生 | 被推介用户购买商品支付成功后按商品比例产生奖励；触发最低金额按「同一订单相同商品合计金额」计算 | 支付完成收尾（afterPaymentCompleted）调用 `AccrueRecommendAwards`：按订单商品分组求和 → 校验比例与最低金额 → 幂等键 `recommend:{订单}:{商品}:{类型}` 写记录；续费订单（orders.kind=renewal）取续费比例，其余取新购比例 |
+| 确认与提现 | 奖励确认后才可提现（剩余确认时间倒数） | 确认天数内为 Pending，到期（或天数 0 即创建时）自动转 Active；可提现 = 已确认 − 已申请（待审核 / 待打款 / 已打款占用，驳回释放）；最低提现金额与提现手续费按配置校验 |
+| 后台接口 | GET/POST `/recommend/config`、GET `/recommend`、PUT `/{id}/awards_amount`、PUT `/{id}/invalid\|active\|frozen\|unfrozen`、DELETE `/{id}`、`/recommend/prereply` 五件套 | `/admin/recommend`（列表）、`/admin/recommend/config`（读写）、`/admin/recommend/awards/:id/...`（awards_amount / active / frozen / unfrozen / invalid + DELETE）、`/admin/recommend/prereplies` 五件套、`/admin/recommend/withdrawals`（提现审核）；权限 `wallet.adjust` + CSRF + 审计 |
+| 用户端接口 | `/recommend/promoter`（GET/POST）、`/recommend/description`、`/promoter/system_url`、`/promoter/url`（GET/POST/DELETE）、`/recommend/copy_link`、`/recommend/products`、`/recommend`、`/withdraw`、`/recommend/config`、POST `/recommend/withdraw` | `/recommend` 与 `/recommend/promoter`、`/description`、`/promoter/system_url`、`/promoter/url`、`/copy_link`、`/products`、`/config`、`/withdrawals`、`/withdraw` 同构落地；提现记录由核心 `/withdraw` 收归本模块（本站无独立提现模块），管理员在「推介计划 → 提现审核」打款 |
+| 预设无效回复 | 列表 + 新增 / 编辑 / 删除；内置项（status=Active）不可编辑删除 | recommend_prereplies（system 标记内置项，seed 一条默认回复）；置无效时可选预设或自定义原因（≤500 字） |
+| 邮件通知 | recommend_notice.html 模板 | 奖励入账给推介人写站内通知 + 邮件（模板名 `recommend_notice`，可在「邮件模板」页覆盖；未配置时用内置兜底文案） |
+
+口径说明（加密代码不可读，按可见契约的最保守解释实现）：
+
+- 与旧「推广返佣」的关系：站内原有 `/referral`（按订单总额固定比例即时返到余额）保留；当被推介用户的推荐人开启过推介计划时，该订单改走本模块奖励记录、不再即时返佣，反之维持旧逻辑，两者互斥以避免同一订单重复发放；
+- 初始奖励存款（awards）在首次开启推介计划时发放一条 `type=init` 的记录（同样走确认天数），列表展示为「奖励存款」；
+- 插件按主机（host_id）筛选商品，本站订单未关联服务实例，等义落为按商品（product_id）筛选与展示；
+- 推荐关系沿用站内邀请码（users.referred_by，注册时填写或链接 `?ref=` 自动带上）；插件自定义链接的自定义后缀以 `from=` 标记来源，不参与奖励计算；
+- 提现打款为线下流程（后台标记「已打款」），不从钱包余额出账；驳回时释放占用的可提现金额；
+- 插件无同名旧功能，本模块接口前缀 `/recommend` 与站内既有 `/referral` 并存不冲突。
 
 验证：`gofmt` / `go build ./...` / `go vet ./...` 与 `npx vue-tsc --noEmit` 全部通过。
