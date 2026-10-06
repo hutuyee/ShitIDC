@@ -25,7 +25,7 @@
 - 邮件发送入队（mail.send 任务），验证码/工单通知不再阻塞请求；provider.sync 定时同步任务真实实现
 - PII 脱敏：后台查看用户资料默认打码，`pii.read.full` 权限可见全量且操作写入审计日志
 - API Token 独立限流（`TOKEN_RATE_LIMIT_PER_MINUTE`）、`/api/v1/version` 版本端点、`/docs/api-docs.html` 交互式 API 文档
-- 财务核心测试：并发扣款（20 并发扣 10 元仅 10 成功）、支付回调幂等、后端价格重算、退款冲正账本一致性（`TEST_DATABASE_URL` 启用）；GitHub Actions CI（gofmt/vet/test/构建 + 前端类型检查）
+- 财务核心测试：并发扣款（20 并发扣 10 元仅 10 成功）、支付回调幂等、后端价格重算、退款冲正账本一致性（`TEST_DATABASE_URL` 启用）
 - 备份/恢复脚本（`scripts/backup.sh`、`scripts/restore.sh`）、nginx TLS/HSTS/接口限流配置、结构化日志与访问日志
 - API Token（Secret 仅显示一次、HMAC 保存）+ 完整 API 使用文档（`docs/api.md`，内置到前端 API 管理页）+ OpenAPI 规范
 - 兼容层双向：既能作为下游连魔方上游，也提供 `/compat/magiccube/v1/*`（login_api / products / create / suspend / unsuspend / terminate / renew）让别的魔方/面板把 ShitIDC 当上游——create/renew 从下游 Token 所属用户余额扣费，Idempotency-Key 防重复开通
