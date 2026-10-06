@@ -656,6 +656,7 @@ func (a *App) registerAdminRoutes(g *gin.RouterGroup) {
 	g.GET("/ticket-premium/config", a.require("ticket.manage"), a.adminTicketPremiumConfig)
 	g.PUT("/ticket-premium/config", a.require("ticket.manage"), a.csrf(), a.adminTicketPremiumSaveConfig)
 	g.GET("/ticket-premium/staff", a.require("ticket.manage"), a.adminTicketPremiumStaff)
+	g.GET("/ticket-premium/hosts", a.require("ticket.manage"), a.adminTicketPremiumHosts)
 	g.GET("/ticket-premium/statistics", a.require("ticket.manage"), a.adminTicketPremiumStatistics)
 	g.GET("/ticket-premium/rank/department_score", a.require("ticket.manage"), a.adminTicketPremiumScoreRankBy(true))
 	g.GET("/ticket-premium/rank/person_score", a.require("ticket.manage"), a.adminTicketPremiumScoreRankBy(false))

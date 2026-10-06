@@ -898,3 +898,18 @@ func (a *App) adminTicketPremiumTimeRankBy(byDepartment bool) gin.HandlerFunc {
 		httpx.OK(c, 200, gin.H{"rank": v})
 	}
 }
+
+// adminTicketPremiumHosts 代建时按用户加载关联产品。
+func (a *App) adminTicketPremiumHosts(c *gin.Context) {
+	uid, err := a.Store.ResolveUserByPublicID(c, c.Query("user_id"))
+	if err != nil {
+		httpx.Fail(c, 404, "USER_NOT_FOUND", "用户不存在")
+		return
+	}
+	v, err := a.Store.ServicesForUser(c, uid)
+	if err != nil {
+		httpx.Fail(c, 500, "INTERNAL_ERROR", "读取产品失败")
+		return
+	}
+	httpx.OK(c, 200, gin.H{"list": v})
+}

@@ -65,7 +65,9 @@ func (a *App) replyTicket(c *gin.Context) {
 	}
 	_ = a.Store.Audit(c, p.User.ID, "ticket.reply", "ticket", ticket.PublicID, c.GetString("request_id"), clientIP(c), c.Request.UserAgent(), nil, nil)
 	a.Bus.Emit(a.eventCtx(c), events.TicketReplied, map[string]any{"ticket_id": ticket.PublicID, "user_id": p.User.PublicID, "by_staff": false})
-	a.mailTicketNotification(c, ticket.Subject, ticket.PublicID, false, p.User.Email, msg.Body)
+	a.ticketMailStaff("ticket_client_reply", "[#"+ticket.Number+"] 工单新回复："+ticket.Subject,
+		"<p>用户回复了工单："+html.EscapeString(ticket.Subject)+"</p>",
+		map[string]string{"ticket_id": ticket.Number, "subject": ticket.Subject, "title": ticket.Subject, "content": html.EscapeString(msg.Body), "username": p.User.Email})
 	httpx.OK(c, 201, msg)
 }
 

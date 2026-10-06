@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"html"
 	"net/http"
 	"strings"
 	"time"
@@ -150,8 +151,10 @@ func (a *App) createTicket(c *gin.Context) {
 		return
 	}
 	_ = a.Store.Audit(c, p.User.ID, "ticket.create", "ticket", v.PublicID, c.GetString("request_id"), clientIP(c), c.Request.UserAgent(), nil, nil)
-	// 通知客服；失败不影响工单本身。
-	a.mailTicketNotification(c, v.Subject, v.PublicID, false, p.User.Email, body)
+	// 通知客服（ticket_client_create 模板，可在「邮件模板」页覆盖）；失败不影响工单本身。
+	a.ticketMailStaff("ticket_client_create", "[#"+v.Number+"] 新工单："+v.Subject,
+		"<p>用户 "+html.EscapeString(p.User.Email)+" 提交了新工单："+html.EscapeString(v.Subject)+"</p>",
+		map[string]string{"ticket_id": v.Number, "subject": v.Subject, "title": v.Subject, "content": html.EscapeString(body), "username": p.User.Email})
 	httpx.OK(c, 201, v)
 }
 

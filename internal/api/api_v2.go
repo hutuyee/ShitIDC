@@ -360,7 +360,11 @@ func (a *App) uploadTicketAttachment(c *gin.Context) {
 		return
 	}
 	// Is the caller allowed to touch this ticket? (owner or staff)
-	if _, err := a.Store.GetTicket(c, ticketID, p.User.ID); err != nil {
+	owner := p.User.ID
+	if p.Permissions["ticket.manage"] {
+		owner = 0
+	}
+	if _, err := a.Store.GetTicket(c, ticketID, owner); err != nil {
 		httpx.Fail(c, 404, "TICKET_NOT_FOUND", "工单不存在")
 		return
 	}
