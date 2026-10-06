@@ -968,7 +968,7 @@ CBAP 仓库 `plugins/addon/` 下 30 个 zip 经逐个检查：**包内全部 `.p
 | CostPay | 支出记录：来源/主体/金额/日期 | 已对齐（§10.17） |
 | CreditLimit | 授信：消费记录、混合支付 | 已对齐（授信账户 + 后台授信管理） |
 | CycleArtificialOrder | 人工订单：调价、批量、子项调价 | 已对齐（§10.23） |
-| EContract | 电子合同：模板/签署/邮寄 | 未落地（§10.13 已声明跳过） |
+| EContract | 电子合同：模板/签署/邮寄 | 已对齐（§10.36） |
 | EmailNoticeAdmin | 管理员邮件通知：接口+模板+收件人 | 已对齐（§10.25） |
 | EventPromotion | 促销：满减/百分比、时间窗 | 已对齐（§10.22） |
 | FlowPacket | 流量包管理 | 已对齐（§10.27） |
@@ -977,25 +977,25 @@ CBAP 仓库 `plugins/addon/` 下 30 个 zip 经逐个检查：**包内全部 `.p
 | IdcsmartDomain | 域名 | 跳过（§9.4） |
 | IdcsmartInvoice | 开票申请：抬头/快递/邮寄/驳回 | 已对齐（§10.24） |
 | IdcsmartRecommend | 推介计划：奖励记录、奖励比例、提现 | 已对齐（§10.31） |
-| IdcsmartSale | 销售统计：消费排名、时间窗图表 | 部分（统计页已有；业务经理维度见 §10.8 说明） |
+| IdcsmartSale | 销售统计：消费排名、时间窗图表 | 已对齐（业务经理维度，§10.35） |
 | IdcsmartStatistics | 统计图表 | 已对齐（后台统计/仪表盘） |
 | IdcsmartVoucher | 代金券：发放/使用/次数 | 已对齐（§10.21） |
 | IdcsmartWebhook | 消息推送（钉钉/企业微信等） | 已对齐（internal/webhook + 后台 Webhook 页） |
-| ManualResource | 手动资源：供应商、noVNC 控制台 | 未落地 |
-| NoticeSendMerge | 通知合并发送 | 未落地 |
+| ManualResource | 手动资源：供应商、noVNC 控制台 | 已对齐（§10.34） |
+| NoticeSendMerge | 通知合并发送 | 跳过（包内无任何可读契约，README 为「插件样式Demo」，§10.37） |
 | ProductCashback | 商品返现 | 已对齐（§10.16） |
 | ProductCertLimit | 产品实名限制 | 已对齐（§10.20） |
 | ProductCycleLimit | 购买周期限制 | 已对齐（§10.20） |
-| ProductDropDownSelect | 商品下拉选择（线索不足） | 未落地（前端仅「商品选择」） |
+| ProductDropDownSelect | 商品下拉选择 | 已对齐（§10.32） |
 | ProductNumLimit | 购买数量限制 | 已对齐（商品自带单客户限购） |
 | ProductRelatedLimit | 关联购买限制 | 已对齐（§10.20） |
 | TicketInternalPremium | 工单内部备注/内部工单 | 已对齐（§10.29） |
 | TicketPremium | 工单高级版（部门/字段/回执模板） | 已对齐（§10.30） |
-| WanyunResource | 万云资源：自定义字段、节点 | 未落地 |
+| WanyunResource | 万云资源：自定义字段、节点 | 已对齐（§10.33） |
 
 主程序包 `zjmf-finance/public/plugins/addons/` 的 5 个（demo_style 示例、expired_ip_log / export_excel 已对齐见 §10.8、expired_auto_delete_bill 与 product_divert 主类 ionCube 加密）本轮复核无变化。
 
-说明：未落地项的共同原因是「服务端加密 + 无对外契约」；其中多数（ManualResource 等）站内已有可复用的骨架（商品 / 服务 / 通知 / 事件），后续可逐个按其前端资产可见的字段面直接设计实现，无需参考加密代码。（IdcsmartRecommend 已按此思路于后续轮次补齐，见 §10.31。）
+说明：本表 30 个插件现已全部对齐或有明确跳过结论——可读契约的（含最初判定「未落地」的 ManualResource / WanyunResource / IdcsmartSale / EContract / ProductDropDownSelect）均按前端资产可见的字段面直接设计实现（§10.31 起的思路）；NoticeSendMerge 连前端资产都没有（§10.37），EContract 的第三方电子签通道以站内流程等价替代（§10.36）。
 
 验证：本轮纯审计与文档，无代码改动。
 
@@ -1361,3 +1361,94 @@ CBAP 包 `addon/IdcsmartRecommend.zip` 的 PHP（controller / model / logic / va
 - 插件无同名旧功能，本模块接口前缀 `/recommend` 与站内既有 `/referral` 并存不冲突。
 
 验证：`gofmt` / `go build ./...` / `go vet ./...` 与 `npx vue-tsc --noEmit` 全部通过。
+### 10.32 ProductDropDownSelect 插件（商品下拉优化）（本轮补齐）
+
+CBAP 包 `addon/ProductDropDownSelect.zip` 主类与路由加密，前端 `template/admin`（api / index.html / js / lang）完整可读：只有一个配置面——后台选择「产品信息详情页的商品下拉框」的下拉样式（default 平铺 / first_group 一级分组 / second_group 二级分组 / first_second_group 一级 + 二级分组），接口 `GET/PUT /product_drop_down_select/config`。本轮按该契约落地：
+
+| 维度 | 参考实现（前端契约） | ShitIDC 落地 |
+|---|---|---|
+| 配置 | GET/PUT config，样式四选一 | `system_settings.product_drop_down_select`（style 一键），`GET/PUT /admin/product-dropdown-select`（product.write + CSRF + 审计），样式白名单校验 |
+| 后台页面 | 四张样式卡 + 示例下拉 | `/admin/product-dropdown` 四张样式卡，分组预览按在售商品实时聚合（`GET` 一并返回分组视图） |
+| 用户端 | host 详情页商品下拉按样式渲染 | 「服务 → 升降级」弹窗的目标商品下拉：非 default 样式按商品分组聚合（naive-ui 分组选项），样式经 `GET /product-dropdown-select` 下发；`upgrade-plans` 返回补充 `group_name` |
+
+口径说明：站内商品分组只有一级（product_groups），second_group / first_second_group 的呈现与 first_group 相同——分组为一级、商品为叶子；样式值按插件原样保存，将来出现多级分组无需迁移。插件配置面里的「请选择商品」示例选择器属于页面内演示数据，无服务端语义，不落地。
+
+验证：`gofmt` / `go build ./...` / `go vet ./...` 与 `npx vue-tsc --noEmit` 全部通过。
+
+### 10.33 WanyunResource 插件（万云资源管理）（本轮补齐）
+
+CBAP 包 `addon/WanyunResource.zip` 的 PHP（controller / model / route / sidebar）全部 ionCube 加密，前端 `template/admin` 五个页面（ip_manage / node_manage / vlan_manage / fiber_manage / fiber_core_manage）与 `api/wanyun_resource.js`、三语语言包可读，接口与字段面完整。本轮按该契约落地为手工资源台账（047 迁移，9 张表）：
+
+| 维度 | 参考实现（前端契约） | ShitIDC 落地 |
+|---|---|---|
+| IP 段 | `GET /wanyun_resource/ips`：段 + 子网（ips_sub）+ IP 数 / 可用 / 已用 / 分组 / 备注；`GET /wanyun_resource/ip` 地址明细（ip / 分配时间 / 备注） | `wy_ip_segments`（parent_id 两级）+ `wy_ip_addresses`（ip / 分配人 / 使用人 / 使用单位 / 已用 + used_at / 备注），可用已用实时统计；地址明细支持手工登记 / 编辑 / 删除（插件由 DCIM 同步，本实现手工维护） |
+| 节点 | `GET/POST/PUT/DELETE /wanyun_resource/node`：名称（≤20）+ 类型 + 自定义字段 | `wy_nodes` + 类型 `wy_node_types`（引用中拒绝删除）+ 自定义字段值校验（必填 / 下拉取值） |
+| 自定义字段 | 节点与纤芯各一套：field_name（≤10）/ text·dropdown / field_option（英文逗号分隔）/ is_required / show_list / 拖动排序 | `wy_custom_fields`（scope=node/fiber_core）+ `wy_custom_field_values`；`/show` 开关与 `/drag`（移到 prev 之后，整表重排权重）语义与站内其它拖动一致 |
+| VLAN | `GET/POST/PUT/DELETE /wanyun_resource/vlan`：vlanid / 名称 / 类型 / 分配人 / 使用人 / 使用单位 / 途径节点[] / 状态 / 备注；`PUT /:id/status` | `wy_vlans` + `wy_vlan_types` + `wy_vlan_nodes`；关键词（名称 / 编号 / 分配人 / 使用人 / 使用单位）与状态过滤 |
+| 光纤 / 纤芯 | 光纤：fiber_num / 所属 / 芯数 / 开通单位 / 施工单位 / 联系人 / 项目 / 价格 / 途径节点[]；纤芯：编号 / 途径节点[] / 备注 / 自定义字段 | `wy_fibers` + `wy_fiber_nodes` + `wy_fiber_cores`（按芯数生成、只增不减）+ `wy_fiber_core_nodes` + 补芯接口；纤芯自定义字段复用 scope=fiber_core |
+| DCIM 接口 | `GET/PUT /wanyun_resource/dcim_config`（选一个 server）+ `/sync` | 明确不落地：DCIM 客户端协议（`idcsmart_dcim/Dcim.php`）ionCube 加密不可读，数据全部手工维护，后台页不提供假入口 |
+
+权限统一 `wanyun_resource.manage`（写操作 CSRF + 审计，动作前缀 `wanyun.*`）。
+
+验证：`gofmt` / `go build ./...` / `go vet ./...` 与 `npx vue-tsc --noEmit` 全部通过。
+
+### 10.34 ManualResource 插件（手动资源）（本轮补齐）
+
+CBAP 包 `addon/ManualResource.zip` 的 PHP（controller / logic / model / validate / route）全部 ionCube 加密，前端 `template/admin`（api / index.html / js / 三语语言包）与随包 noVNC 完整可读。本轮按该契约落地（048 迁移）：
+
+| 维度 | 参考实现（前端契约） | ShitIDC 落地 |
+|---|---|---|
+| 供应商 | `GET/POST/PUT/DELETE /manual_resource/supplier`：名称 / 联系方式 / 备注 | `manual_suppliers` 同名语义；删除后名下资源的供应商置空 |
+| 资源台账 | `GET/POST/PUT/DELETE /manual_resource`：主 IP（必填）/ 附加 IP（换行多个）/ 供应商 / 成本 / 配置 / 备注 / 系统用户名密码 / 控制方式 ipmi·客户端 / IPMI IP、端口、版本 / DCIM 客户端地址、服务器 ID / 控制用户名密码 / 到期时间 | `manual_resources` 全字段；关键词匹配 IP / 配置 / 备注，供应商与状态过滤 |
+| 分配 | 确认分配该资源 / 确认空闲该资源（关联 client + host，到期时间） | `POST /manual-resources/:id/assign`（按服务选择、客户随服务行带出，服务未终止才可分配）与 `/idle`（解除关联置 idle） |
+| 电源操作 | `GET /:id/status`、`POST /:id/{on,off,reboot}`：状态列显示 开机 / 关机 / 错误 | IPMI 模式走 `internal/ipmi`（见下），操作后落最近电源状态 power_status；客户端（DCIM）模式明确返回「不支持」（与插件语言包 manual_text28「不支持」一致） |
+| 任务进度 | `GET /:id/task_status`、`POST /:id/cancel_task`、`GET /:id/os`、重装 / 救援 / 破解密码 | 不落地：重装 / 救援 / 破解密码与 OS 列表由加密的 `IpmiLogic` / `DcimClientLogic` 驱动，协议不可读；IPMI 电源命令是同步短操作，无任务队列语义 |
+| 控制台 | 随包 noVNC（view/noVNC） | 不落地：控制台经由 DCIM 客户端（加密）；IPMI HTML5 KVM 是厂商私有实现 |
+
+**internal/ipmi（纯标准库 IPMI 2.0 / RMCP+ 客户端）**：协商 RAKP-HMAC-SHA1 + HMAC-SHA1-96 + AES-CBC-128（cipher suite 3 语义）。密钥推导与帧格式按 ipmitool lanplus 实现逐项对齐——SIK = HMAC(Kuid, Rm‖Rc‖ROLE‖ULEN‖USERNAME)、K1/K2 = HMAC(SIK, 0x01/0x02 ×20)、RAKP2/3 authcode = HMAC(Kuid, Rc‖SIDm‖ROLE‖ULEN‖USERNAME)、RAKP4 ICV = HMAC(SIK, Rm‖SIDc‖GUIDc)[:12]、完整性覆盖 AuthType..Next Header（4 字节对齐）、机密性 = IV(16)‖AES-CBC-128(K2[:16])。测试双保险：推导向量独立用 Python hashlib 复算钉死；假 BMC 按同协议实现服务端跑通「握手 → 加解密 → 电源命令」全流程，并验证密码错误在 RAKP2 处失败、篡改包被拒（ErrIntegrity）。
+
+验证：`gofmt` / `go build ./...` / `go vet ./...`、`go test ./internal/ipmi/` 与 `npx vue-tsc --noEmit` 全部通过。
+
+### 10.35 IdcsmartSale 插件（业务经理 / 销售系统）（本轮补齐）
+
+CBAP 包 `addon/IdcsmartSale.zip` 的 PHP 全部 ionCube 加密，前端 `template/admin`（七个页面 + api/sales.js + 三语语言包）与大额订单邮件模板可读。此前统计页已有（§10.8 说明），本轮补齐业务经理维度（049 迁移）：
+
+| 维度 | 参考实现（前端契约） | ShitIDC 落地 |
+|---|---|---|
+| 销售成员 | `GET/POST/PUT/DELETE /sale`、`/sale/:id/{enable,disable}`：姓名 / 编号 / 邮箱 / 邀请链接 | `sales` 表挂后台账号（admin_id 唯一），姓名 / 编号 / 邮箱 / 启停；邀请链接未落地（站内无对应注册归因口径，与推介计划 `?ref=` 互不混淆） |
+| 用户绑定 | `/sale/client` 五件套 + 未绑定用户列表 | `sale_clients`（user_id 唯一，一人归一个销售，换绑先解除）；EntityPicker 选用户 |
+| 提成规则 | 全局提成设置（首充 / 续充 fixed·percent）+ 商品提成设置（product[] + new/renew/repurchase/upgrade 四类 mode/value） | `sale_commission_configs`：global 一条兜底 + product 级覆盖（unique(scope, product_id)，保存即 upsert）；fixed 落分、percent 落基点 |
+| 大额订单奖励 | money_data：min_price / max_price / mode / value + big_order 邮件模板 | `system_settings.sale` 的 big_min_cents / big_max_cents（0=不限）/ mode / value；支付成功命中区间记一条 big_order 提成。邮件通知未单独接（OrderPaid 事件可经 §10.25 的邮件通知配置发信） |
+| 确认天数 | confirm_wait_day | 提成记录落库时写 confirm_at = now + N 天；到期惰性转 active（列表与汇总实时计算），管理员可置 invalid |
+| 记提成 | 支付成功按规则归属销售 | 支付收尾接线 `AccrueSaleCommission`：renewal→renew、upgrade→upgrade、new 按客户是否买过同商品区分 new / repurchase；商品级规则优先于全局；幂等键 `订单:明细:类型` |
+| 统计 | `/sale/statistics`、`/sale/order_ranking`、`/sale/client_ranking`、`/sale/commission`、导出 Excel | `/admin/sale/statistics`（每销售：订单数 / 销售额 / 已生效与待确认提成）、`/admin/sale/client-ranking`（消费总金额排名）、`/admin/sale-commissions`（提成详情：类型 / 基数 / 方式 / 金额 / 状态筛选与置无效）；导出走站内「导出中心」模式，未单独实现 |
+
+未落地项（前端契约不足 + 服务端加密，不编造）：任务奖励（task 列表仅见名称，无字段）、充值提成（首充 / 续充挂在充值流程上，插件逻辑加密）、邀请链接。这些类型在提成口径中不存在，不会静默按 0 处理。
+
+验证：`gofmt` / `go build ./...` / `go vet ./...` 与 `npx vue-tsc --noEmit` 全部通过。
+
+### 10.36 EContract 插件（电子合同）（本轮补齐）
+
+CBAP 包 `addon/EContract.zip` 的 PHP（controller / logic / model）ionCube 加密，前端 `template/admin`（contract_config / contract_template / create_contract_template / contract_details / e_contract）与 `template/clientarea`（applyContract / signContract / contractDetail）完整可读。§10.13 曾因「EContract 插件加密」整体跳过；按 §10.15 的思路以可见契约重新落地（050 迁移）：
+
+| 维度 | 参考实现（前端契约） | ShitIDC 落地 |
+|---|---|---|
+| 基础设置 | switch 功能开关 / day_limit 申请时间限制 / 我方单位名 / 社会信用代码 / 联系人 / 电话 / 邮箱 / 地址 / 邮编 / 合同编号前缀与起始编号（20 位以内数字自动递增）/ logo / 公司印章 / 指纹信息 | `system_settings.e_contract` 同名语义；编号只能向前推进；指纹信息未落地（站内签订无指纹采集设备口径） |
+| 模板 | 名称 / 内容 / 关联商品 / 基础合同 / 强制签订 / 状态 / 备注 / 变量清单 / 复制 | `e_contract_templates` 同名语义 + `GET` 返回变量清单（合同编号 / 我方信息 / 客户 / 订单金额 / 商品名 / 时间等 14 个）；复制默认停用 |
+| 申请 | 用户对已支付订单申请合同（`/e_contract/order` 列表 + apply） | 功能开关 → 时间窗 → 一单一有效合同 → 按订单商品选启用模板（回退基础合同）→ 编号（前缀 + 递增号，行锁防重号）→ 变量渲染快照落库 |
+| 签订 | signContract（用户签字，可上传签名图） | 用户端「合同」页手写签名板（canvas → PNG dataURL ≤200KB）→ 状态 pending → signed |
+| 审核 | 通过（complete）/ 驳回（reject，理由必填）/ 作废（cancel，原因必填） | `POST /admin/e-contracts/:id/review`，仅 pending / signed 可处理 |
+| 邮寄 | `POST /:id/mail`：快递公司 + 单号 | 仅已生效合同可登记，展示在列表 |
+| 下载 | `POST /:id/download`（PDF） | 可打印 HTML（含 Logo / 印章 / 客户签名 / 正式版式），已驳回 / 作废不可下载；PDF 需内嵌 CJK 字体，纯标准库不可行（有意差异，见 README） |
+
+有意差异：插件对接的第三方电子签通道（逻辑加密）不落地，签订为站内流程（签名图 + 审核留痕）；合同内容为申请时快照，此后修改模板 / 设置不影响历史合同。
+
+验证：`gofmt` / `go build ./...` / `go vet ./...` 与 `npx vue-tsc --noEmit` 全部通过。
+
+### 10.37 NoticeSendMerge 插件（通知合并发送）——明确跳过
+
+CBAP 包 `addon/NoticeSendMerge.zip` 共 11 个文件：主类 / model / route / 三语 lang 全部 ionCube 加密，`template/admin` 与 `template/clientarea` 只有空目录（.gitkeep），README.md 内容为「插件样式Demo」五个字。**没有任何可读契约**——接口路径、字段面、合并策略一概不可见，连「合并」的对象（站内信？邮件？按用户还是按事件？）都无从判断。
+
+按 §7.2「识别不了的不编造」原则：不为一个名字发明一套行为。若后续拿到该插件的明文版本或文档，可按站内已有的通知基础设施（`client_care_mails` 收件箱、internal/notify、邮件通道注册表）套用同样的「前端字段面 → 存储层 → 管理页」路径补齐。
+
+至此 §10.15 审计的 CBAP `addon/` 30 个插件全部收口：28 个已对齐（含本轮 5 个），IdcsmartDomain 按 §9.4 跳过（协议加密且涉及真实域名扣费），NoticeSendMerge 按 §10.37 跳过（零契约）。
