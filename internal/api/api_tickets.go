@@ -21,7 +21,7 @@ const ticketBodyMaxRunes = 5000
 
 func (a *App) ticketDetail(c *gin.Context) {
 	p, _ := getPrincipal(c)
-	d, err := a.Store.GetTicket(c, c.Param("id"), p.User.ID)
+	d, err := a.Store.GetTicketPremium(c, c.Param("id"), p.User.ID)
 	if errors.Is(err, store.ErrNotFound) {
 		httpx.Fail(c, 404, "TICKET_NOT_FOUND", "工单不存在")
 		return
@@ -33,11 +33,12 @@ func (a *App) ticketDetail(c *gin.Context) {
 	httpx.OK(c, 200, d)
 }
 
-// replyTicket appends the user's message and emails the staff mailboxes.
+// replyTicket appends the user's message (可带附件) and emails the staff mailboxes.
 func (a *App) replyTicket(c *gin.Context) {
 	p, _ := getPrincipal(c)
 	var in struct {
-		Body string `json:"body"`
+		Body       string   `json:"body"`
+		Attachment []string `json:"attachment"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
 		httpx.Fail(c, 400, "INVALID_REQUEST", "请求格式错误")
@@ -48,7 +49,7 @@ func (a *App) replyTicket(c *gin.Context) {
 		httpx.Fail(c, 400, "INVALID_TICKET", "回复内容为空或超过 5000 字")
 		return
 	}
-	ticket, err := a.Store.GetTicket(c, c.Param("id"), p.User.ID)
+	ticket, err := a.Store.GetTicketPremium(c, c.Param("id"), p.User.ID)
 	if errors.Is(err, store.ErrNotFound) {
 		httpx.Fail(c, 404, "TICKET_NOT_FOUND", "工单不存在")
 		return
@@ -57,7 +58,7 @@ func (a *App) replyTicket(c *gin.Context) {
 		httpx.Fail(c, 500, "INTERNAL_ERROR", "读取工单失败")
 		return
 	}
-	msg, _, err := a.Store.ReplyTicket(c, c.Param("id"), p.User.ID, false, body)
+	msg, _, err := a.Store.ReplyTicketPremium(c, c.Param("id"), p.User.ID, false, body, in.Attachment)
 	if err != nil {
 		httpx.Fail(c, 400, "TICKET_REPLY_FAILED", err.Error())
 		return

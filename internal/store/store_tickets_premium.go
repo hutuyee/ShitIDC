@@ -408,13 +408,14 @@ func (s *Store) DeleteTicketStatus(ctx context.Context, id int64) error {
 	return err
 }
 
-func (s *Store) ticketStatusExists(ctx context.Context, key string) (string, error) {
+func (s *Store) ticketStatusExists(ctx context.Context, key string) (string, bool, error) {
 	var name string
-	err := s.DB.QueryRow(ctx, `SELECT name FROM ticket_statuses WHERE key=$1`, key).Scan(&name)
+	var finished bool
+	err := s.DB.QueryRow(ctx, `SELECT name,finished FROM ticket_statuses WHERE key=$1`, key).Scan(&name, &finished)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", ErrNotFound
+		return "", false, ErrNotFound
 	}
-	return name, err
+	return name, finished, err
 }
 
 // ---- 预设回复 ----
@@ -1205,10 +1206,13 @@ status=CASE WHEN $3 THEN 'closed' ELSE status END,updated_at=now() WHERE id=$1`,
 // SaveTicketPremiumFields 保存详情页的类型 / 状态 / 关联产品。
 func (s *Store) SaveTicketPremiumFields(ctx context.Context, ticketPublicID string, adminID, typeID int64, statusKey string, hostIDs []int64) error {
 	statusKey = strings.TrimSpace(statusKey)
+	statusFinished := false
 	if statusKey != "" {
-		if _, err := s.ticketStatusExists(ctx, statusKey); err != nil {
+		_, finished, err := s.ticketStatusExists(ctx, statusKey)
+		if err != nil {
 			return err
 		}
+		statusFinished = finished
 	}
 	deptID := int64(0)
 	if typeID > 0 {
@@ -1236,8 +1240,11 @@ func (s *Store) SaveTicketPremiumFields(ctx context.Context, ticketPublicID stri
 		return err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE tickets SET ticket_type_id=$2,department_id=$3,host_ids=$4,
-status=CASE WHEN $5='' THEN status ELSE $5 END,updated_at=now() WHERE id=$1`,
-		ticketID, ticketNullableID(typeID), ticketNullableID(deptID), hostIDs, statusKey); err != nil {
+status=CASE WHEN $5='' THEN status ELSE $5 END,
+finished=CASE WHEN $5='' THEN finished ELSE $6 END,
+finish_time=CASE WHEN $5='' THEN finish_time WHEN $6 THEN COALESCE(finish_time,now()) ELSE NULL END,
+updated_at=now() WHERE id=$1`,
+		ticketID, ticketNullableID(typeID), ticketNullableID(deptID), hostIDs, statusKey, statusFinished); err != nil {
 		return err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -1250,14 +1257,17 @@ status=CASE WHEN $5='' THEN status ELSE $5 END,updated_at=now() WHERE id=$1`,
 // SetTicketPremiumStatus 客服关闭 / 重新打开工单。
 func (s *Store) SetTicketPremiumStatus(ctx context.Context, ticketPublicID string, adminID int64, statusKey string) error {
 	statusKey = strings.TrimSpace(statusKey)
-	if _, err := s.ticketStatusExists(ctx, statusKey); err != nil {
+	_, finished, err := s.ticketStatusExists(ctx, statusKey)
+	if err != nil {
 		return err
 	}
 	ticketID, err := s.ticketIDByPublic(ctx, ticketPublicID)
 	if err != nil {
 		return err
 	}
-	if _, err := s.DB.Exec(ctx, `UPDATE tickets SET status=$2,updated_at=now() WHERE id=$1`, ticketID, statusKey); err != nil {
+	if _, err := s.DB.Exec(ctx, `UPDATE tickets SET status=$2,finished=$3,
+finish_time=CASE WHEN $3 THEN COALESCE(finish_time,now()) ELSE NULL END,updated_at=now() WHERE id=$1`,
+		ticketID, statusKey, finished); err != nil {
 		return err
 	}
 	desc := "更新工单状态"
@@ -1396,7 +1406,7 @@ type TicketStatsSummary struct {
 	Total                 int64   `json:"total"`
 	PendingTotal          int64   `json:"pending_total"`
 	ProcessedTotal        int64   `json:"processed_total"`
-	AvgScore              float64 `json:"avg_score"`
+	AvgScore              float64 `json:"avgrage_score"`
 	Satisfaction          float64 `json:"satisfaction"`
 	Attitude              float64 `json:"attitude"`
 	ScoreProcessing       float64 `json:"score_processing"`
@@ -1409,11 +1419,11 @@ type TicketStatsSummary struct {
 
 // TicketRankRow 是部门 / 个人排名行。
 type TicketRankRow struct {
-	Name         string  `json:"name"`
-	Score        float64 `json:"score"`
-	Satisfaction float64 `json:"satisfaction"`
-	Attitude     float64 `json:"attitude"`
-	Processing   float64 `json:"processing"`
+	Name           string  `json:"name"`
+	Score          float64 `json:"score"`
+	Satisfaction   float64 `json:"satisfaction"`
+	Attitude       float64 `json:"attitude"`
+	ProcessingTime float64 `json:"processing_time"`
 }
 
 func (f TicketStatsFilter) where(alias string) (string, []any) {
@@ -1495,7 +1505,7 @@ GROUP BY ` + group + ` ORDER BY 2 DESC`
 	out := []TicketRankRow{}
 	for rows.Next() {
 		var v TicketRankRow
-		if err := rows.Scan(&v.Name, &v.Score, &v.Satisfaction, &v.Attitude, &v.Processing); err != nil {
+		if err := rows.Scan(&v.Name, &v.Score, &v.Satisfaction, &v.Attitude, &v.ProcessingTime); err != nil {
 			return nil, err
 		}
 		out = append(out, v)

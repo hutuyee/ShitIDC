@@ -99,10 +99,10 @@ func (a *App) listServices(c *gin.Context) {
 	httpx.OK(c, 200, v)
 }
 
-// listTickets 返回当前用户的工单。
+// listTickets 返回当前用户的工单（高级版：含编号 / 状态 / 部门类型 / 处理时限）。
 func (a *App) listTickets(c *gin.Context) {
 	p, _ := getPrincipal(c)
-	v, err := a.Store.ListTickets(c, p.User.ID)
+	v, _, err := a.Store.ListTicketsPremium(c, store.TicketPremiumFilter{ClientID: p.User.ID, Limit: 200})
 	if err != nil {
 		httpx.Fail(c, 500, "INTERNAL_ERROR", "读取工单失败")
 		return
@@ -110,13 +110,17 @@ func (a *App) listTickets(c *gin.Context) {
 	httpx.OK(c, 200, v)
 }
 
-// createTicket 新建工单并通知客服邮箱。
+// createTicket 新建工单（高级版：部门 / 类型 / 关联产品 / 附件）并通知客服邮箱。
 func (a *App) createTicket(c *gin.Context) {
 	p, _ := getPrincipal(c)
 	var in struct {
-		Subject  string `json:"subject"`
-		Priority string `json:"priority"`
-		Message  string `json:"message"`
+		Subject      string   `json:"subject"`
+		Priority     string   `json:"priority"`
+		Message      string   `json:"message"`
+		DepartmentID int64    `json:"department_id"`
+		TicketTypeID int64    `json:"ticket_type_id"`
+		HostIDs      []int64  `json:"host_ids"`
+		Attachment   []string `json:"attachment"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
 		httpx.Fail(c, 400, "INVALID_REQUEST", "请求格式错误")
@@ -131,9 +135,18 @@ func (a *App) createTicket(c *gin.Context) {
 		httpx.Fail(c, 400, "INVALID_TICKET", "工单标题与内容都不能少于 2 个字")
 		return
 	}
-	v, err := a.Store.CreateTicket(c, p.User.ID, subject, in.Priority, body)
+	v, err := a.Store.CreateTicketPremium(c, store.TicketPremiumCreateInput{
+		UserID:        p.User.ID,
+		DepartmentID:  in.DepartmentID,
+		TypeID:        in.TicketTypeID,
+		Title:         subject,
+		Priority:      in.Priority,
+		HostIDs:       in.HostIDs,
+		Message:       body,
+		AttachmentIDs: in.Attachment,
+	})
 	if err != nil {
-		httpx.Fail(c, 500, "INTERNAL_ERROR", "创建工单失败")
+		httpx.Fail(c, 400, "TICKET_CREATE_FAILED", err.Error())
 		return
 	}
 	_ = a.Store.Audit(c, p.User.ID, "ticket.create", "ticket", v.PublicID, c.GetString("request_id"), clientIP(c), c.Request.UserAgent(), nil, nil)
