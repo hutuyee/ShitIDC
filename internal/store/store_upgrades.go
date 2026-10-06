@@ -43,6 +43,7 @@ func CycleDays(cycle string) int {
 type UpgradePlan struct {
 	ProductID    string `json:"product_id"`
 	ProductName  string `json:"product_name"`
+	GroupName    string `json:"group_name"`
 	BillingCycle string `json:"billing_cycle"`
 	PriceCents   int64  `json:"price_cents"`
 	DiffCents    int64  `json:"diff_cents"`
@@ -115,7 +116,7 @@ func (s *Store) loadUpgradeBase(ctx context.Context, tx pgx.Tx, servicePublicID 
 
 // ListUpgradePlans 列出可以升级到的目标方案（全站其它在售商品）。
 func (s *Store) ListUpgradePlans(ctx context.Context, userID int64, servicePublicID string) ([]UpgradePlan, error) {
-	rows, err := s.DB.Query(ctx, `SELECT p.public_id::text,p.name,pp.billing_cycle,pp.amount_cents,s.expires_at,coalesce(oi.billing_cycle,'monthly'),coalesce(oi.unit_price_cents,0),coalesce(oi.config_cents,0) FROM services s JOIN products p ON p.deleted_at IS NULL AND p.active=true AND p.id<>s.product_id JOIN product_prices pp ON pp.product_id=p.id AND pp.active=true LEFT JOIN order_items oi ON oi.id=s.order_item_id WHERE s.public_id=$1 AND s.user_id=$2 ORDER BY p.sort_weight DESC, pp.amount_cents`, servicePublicID, userID)
+	rows, err := s.DB.Query(ctx, `SELECT p.public_id::text,p.name,coalesce(g.name,''),pp.billing_cycle,pp.amount_cents,s.expires_at,coalesce(oi.billing_cycle,'monthly'),coalesce(oi.unit_price_cents,0),coalesce(oi.config_cents,0) FROM services s JOIN products p ON p.deleted_at IS NULL AND p.active=true AND p.id<>s.product_id JOIN product_prices pp ON pp.product_id=p.id AND pp.active=true LEFT JOIN product_groups g ON g.id=p.group_id LEFT JOIN order_items oi ON oi.id=s.order_item_id WHERE s.public_id=$1 AND s.user_id=$2 ORDER BY coalesce(g.sort_weight,0) DESC, p.sort_weight DESC, pp.amount_cents`, servicePublicID, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +128,7 @@ func (s *Store) ListUpgradePlans(ctx context.Context, userID int64, servicePubli
 		var expiresAt *time.Time
 		var fromCycle string
 		var fromPrice, fromConfig int64
-		if err := rows.Scan(&plan.ProductID, &plan.ProductName, &plan.BillingCycle, &plan.PriceCents, &expiresAt, &fromCycle, &fromPrice, &fromConfig); err != nil {
+		if err := rows.Scan(&plan.ProductID, &plan.ProductName, &plan.GroupName, &plan.BillingCycle, &plan.PriceCents, &expiresAt, &fromCycle, &fromPrice, &fromConfig); err != nil {
 			return nil, err
 		}
 		base := serviceUpgradeBase{cycle: fromCycle, unitPrice: fromPrice, configCents: fromConfig, expiresAt: expiresAt}

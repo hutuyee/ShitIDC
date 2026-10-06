@@ -128,6 +128,7 @@ function toggleTheme() {
             <router-link v-if="auth.permissions['extension.manage']" :to="ADMIN_PATH + '/ext-themes'">扩展 / 主题</router-link>
             <router-link v-if="auth.permissions['product.write']" :to="ADMIN_PATH + '/products'">商品与分组</router-link>
             <router-link v-if="auth.permissions['product.write']" :to="ADMIN_PATH + '/product-limits'">商品限购</router-link>
+            <router-link v-if="auth.permissions['product.write']" :to="ADMIN_PATH + '/product-dropdown'">商品下拉优化</router-link>
             <router-link v-if="auth.permissions['announcement.manage']" :to="ADMIN_PATH + '/announcements'">站内公告</router-link>
             <router-link v-if="auth.permissions['security.audit.read']" :to="ADMIN_PATH + '/logs'">日志中心</router-link>
             <router-link v-if="auth.permissions['wallet.adjust']" :to="ADMIN_PATH + '/payments'">支付方式</router-link>

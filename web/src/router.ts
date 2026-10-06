@@ -53,6 +53,7 @@ import AdminInspectionRecords from './views/AdminInspectionRecords.vue'
 import AdminCertifications from './views/AdminCertifications.vue'
 import AdminClientFields from './views/AdminClientFields.vue'
 import AdminProductLimits from './views/AdminProductLimits.vue'
+import AdminProductDropDown from './views/AdminProductDropDown.vue'
 import AdminExport from './views/AdminExport.vue'
 import AdminExpiredIpLogs from './views/AdminExpiredIpLogs.vue'
 import AdminAgents from './views/AdminAgents.vue'
@@ -99,6 +100,7 @@ const router = createRouter({ history: createWebHistory(), routes: [
   { path: ADMIN_PATH + '/certifications', component: AdminCertifications },
   { path: ADMIN_PATH + '/client-fields', component: AdminClientFields },
   { path: ADMIN_PATH + '/product-limits', component: AdminProductLimits },
+  { path: ADMIN_PATH + '/product-dropdown', component: AdminProductDropDown },
   { path: ADMIN_PATH + '/export', component: AdminExport },
   { path: ADMIN_PATH + '/expired-ip-logs', component: AdminExpiredIpLogs },
   { path: ADMIN_PATH + '/agents', component: AdminAgents },

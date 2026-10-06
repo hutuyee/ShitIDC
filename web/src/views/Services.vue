@@ -48,11 +48,36 @@ const upgradeQuote = ref<any>(null)
 const upgradeBusy = ref(false)
 const upgradeVoucher = ref('')
 
-const planOptions = computed(() => upgradePlans.value.map(pl => ({
-  label: pl.product_name + '（' + cycleText(pl.billing_cycle) + '）' +
-    (pl.diff_cents > 0 ? ' 需补 ' + money(pl.diff_cents) : ' 无需补款'),
-  value: pl.product_id + '|' + pl.billing_cycle,
-})))
+// 商品下拉优化（对齐魔方 ProductDropDownSelect 插件）：非 default 样式时，
+// 升降级弹窗的目标商品下拉按商品分组聚合（站内分组只有一级，三种分组样式呈现相同）。
+const dropStyle = ref('default')
+const dropDownGrouped = computed(() => dropStyle.value !== 'default')
+
+const planOptionLabel = (pl: any) => pl.product_name + '（' + cycleText(pl.billing_cycle) + '）' +
+  (pl.diff_cents > 0 ? ' 需补 ' + money(pl.diff_cents) : ' 无需补款')
+
+const planOptions = computed(() => {
+  if (!dropDownGrouped.value) {
+    return upgradePlans.value.map(pl => ({ label: planOptionLabel(pl), value: pl.product_id + '|' + pl.billing_cycle }))
+  }
+  const groups: { type: 'group'; label: string; key: string; children: any[] }[] = []
+  const index = new Map<string, number>()
+  for (const pl of upgradePlans.value) {
+    const g = pl.group_name || '未分组'
+    let gi = index.get(g)
+    if (gi === undefined) {
+      groups.push({ type: 'group', label: g, key: g, children: [] })
+      gi = groups.length - 1
+      index.set(g, gi)
+    }
+    groups[gi].children.push({ label: planOptionLabel(pl), value: pl.product_id + '|' + pl.billing_cycle })
+  }
+  return groups
+})
+
+onMounted(async () => {
+  try { dropStyle.value = dataOf<any>(await api.get('/product-dropdown-select'))?.style || 'default' } catch { /* 保持默认平铺 */ }
+})
 
 async function openUpgrade(s: any) {
   upgradeService.value = s
