@@ -16,6 +16,7 @@ import Services from './views/Services.vue'
 import FlowPackets from './views/FlowPackets.vue'
 import Divert from './views/Divert.vue'
 import AdminProductDiverts from './views/AdminProductDiverts.vue'
+import AdminExpiredBillLogs from './views/AdminExpiredBillLogs.vue'
 import Messages from './views/Messages.vue'
 import Tickets from './views/Tickets.vue'
 import TicketDetail from './views/TicketDetail.vue'
@@ -116,6 +117,7 @@ const router = createRouter({ history: createWebHistory(), routes: [
   { path: ADMIN_PATH + '/e-contracts', component: AdminEContracts },
   { path: ADMIN_PATH + '/export', component: AdminExport },
   { path: ADMIN_PATH + '/expired-ip-logs', component: AdminExpiredIpLogs },
+  { path: ADMIN_PATH + '/expired-bill-logs', component: AdminExpiredBillLogs },
   { path: ADMIN_PATH + '/agents', component: AdminAgents },
   { path: ADMIN_PATH + '/ext-themes', component: AdminExtThemes },
   { path: '/referral', component: Referral },

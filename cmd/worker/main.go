@@ -460,6 +460,11 @@ func (w *worker) lifecycle(ctx context.Context, t *asynq.Task, action string) er
 		if err := w.st.RecordExpiredIPLog(ctx, serviceID); err != nil {
 			log.Printf("expired ip log %s: %v", serviceID, err)
 		}
+		// 到期账单处理（对齐魔方 expired_auto_delete_bill 插件）：按配置了结
+		// 已终止服务的未支付续费账单并留档，只记日志不影响终止。
+		if err := w.st.RecordExpiredBillAction(ctx, serviceID); err != nil {
+			log.Printf("expired bill action %s: %v", serviceID, err)
+		}
 		w.bus.Emit(ctx, events.ServiceTerminated, map[string]any{"service_id": serviceID, "user_uid": ref.UserID})
 	}
 	return nil

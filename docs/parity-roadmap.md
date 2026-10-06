@@ -993,7 +993,7 @@ CBAP 仓库 `plugins/addon/` 下 30 个 zip 经逐个检查：**包内全部 `.p
 | TicketPremium | 工单高级版（部门/字段/回执模板） | 已对齐（§10.30） |
 | WanyunResource | 万云资源：自定义字段、节点 | 已对齐（§10.33） |
 
-主程序包 `zjmf-finance/public/plugins/addons/` 的 5 个（demo_style 示例、expired_ip_log / export_excel 已对齐见 §10.8、product_divert 已按前端契约重新落地见 §10.38、expired_auto_delete_bill 主类 ionCube 加密）本轮复核。
+主程序包 `zjmf-finance/public/plugins/addons/` 的 5 个（demo_style 示例、expired_ip_log / export_excel 已对齐见 §10.8、product_divert 已按前端契约重新落地见 §10.38、expired_auto_delete_bill 已按前端契约重新落地见 §10.39）全部收口。
 
 说明：本表 30 个插件现已全部对齐或有明确跳过结论——可读契约的（含最初判定「未落地」的 ManualResource / WanyunResource / IdcsmartSale / EContract / ProductDropDownSelect）均按前端资产可见的字段面直接设计实现（§10.31 起的思路）；NoticeSendMerge 连前端资产都没有（§10.37），EContract 的第三方电子签通道以站内流程等价替代（§10.36）。
 
@@ -1477,5 +1477,25 @@ CBAP 包 `addon/NoticeSendMerge.zip` 共 11 个文件：主类 / model / route /
 - 查找接收方按手机号 / 邮箱**精确匹配**且返回脱敏账号，不提供模糊搜索（防用户枚举）；
 - product_range 不选视为「全部商品可自助转移」（表单语义无更多线索，页面提示写明）；
 - 双方费用各自生成人工订单：转出方付转出费用、接收方付转入费用，费用为 0 的那一侧免支付直接放行。
+
+验证：`gofmt` / `go build ./...` / `go vet ./...` / `go test ./internal/...` 与 `npx vue-tsc --noEmit` 全部通过。
+
+### 10.39 expired_auto_delete_bill 插件（到期账单处理）（本轮补齐）
+
+主程序包 `zjmf-finance/public/plugins/addons/expired_auto_delete_bill/` 的主类与语言包 ionCube 加密，但 `menu.php`（设置 / 账单处理记录两个菜单项）与全部模板（setting.tpl / index.tpl）可读——此前 §10.8 仅按「主类加密」整体跳过，按 §10.15 的思路以可见契约重新落地（052 迁移）。
+
+| 维度 | 参考实现（模板契约） | ShitIDC 落地 |
+|---|---|---|
+| 处理方式 | setting.tpl 唯一字段：产品到期账单处理方式——无（空）/ delete 直接删除 / cancel 标记取消 | `system_settings.expired_auto_delete_bill`；`GET/PUT /admin/expired-bill-action`（invoice.manage + CSRF + 审计），后台「到期账单处理」页单选 |
+| 行为 | 产品到期（删除）时把其未支付账单删除或标记取消 | worker terminate 收尾（`RecordExpiredIPLog` 旁）调用 `RecordExpiredBillAction`：把该服务未支付的**续费**订单（kind='renewal'，经 orders.renew_service_id）与账单作废——到期后服务已不可续费，账单不可能再被支付，作废是账面上最忠实的等价动作 |
+| 记录 | index.tpl「账单处理记录」：账单号（Cancelled 带链接）/ 状态（着色）/ 处理时间 / 关联产品（domain + dedicatedip） | `expired_bill_logs` 表逐笔留档（账单公开 ID / 处理后状态 void / 配置的 action / 服务与产品名 / 实例主 IP / 用户）；`GET /admin/expired-bill-logs`（关键词 + 分页），后台同页展示 |
+| 权限 | 插件语言包加密，权限点不可读 | 统一 `invoice.manage`（账单属财务数据，与「发票管理」同权限） |
+
+有意差异（2 处，均为账目口径）：
+
+- **「直接删除」与「标记取消」的最终账面状态相同（void）**：站内账目不物理删除（§10.23 口径：订单 / 账单 / 支付记录不物理删除），插件「删除」是物理删行；本实现两种方式都作废订单与账单，配置里选的动作原样记进日志的 action 列，差异保留在记录里而不是账面上；
+- **只处理续费账单**：插件处理「产品到期账单」；站内已终止服务的未支付账单只有续费单（新购账单随订单走，人工单与发票费用单有各自的支付/作废流程），故范围限定为 `kind='renewal'` 的未支付订单 / 账单。
+
+未配置（action 为空）时钩子是空操作，默认行为与从前完全一致；处理失败只记日志，不影响终止本身（与到期 IP 记录同一口径）。
 
 验证：`gofmt` / `go build ./...` / `go vet ./...` / `go test ./internal/...` 与 `npx vue-tsc --noEmit` 全部通过。

@@ -138,6 +138,7 @@ function toggleTheme() {
             <router-link v-if="auth.permissions['webhook.manage']" :to="ADMIN_PATH + '/webhooks'">Webhook 推送</router-link>
             <router-link v-if="auth.permissions['finance.report']" :to="ADMIN_PATH + '/export'">导出中心</router-link>
             <router-link v-if="auth.permissions['service.manage']" :to="ADMIN_PATH + '/expired-ip-logs'">到期IP记录</router-link>
+            <router-link v-if="auth.permissions['invoice.manage']" :to="ADMIN_PATH + '/expired-bill-logs'">到期账单处理</router-link>
             <router-link v-if="auth.permissions['service.manage']" :to="ADMIN_PATH + '/inspection-records'">异常巡查</router-link>
             <router-link v-if="auth.permissions['wanyun_resource.manage']" :to="ADMIN_PATH + '/wanyun-resource'">万云资源</router-link>
             <router-link v-if="auth.permissions['manual_resource.manage']" :to="ADMIN_PATH + '/manual-resources'">手动资源</router-link>

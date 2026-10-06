@@ -599,6 +599,10 @@ func (a *App) registerAdminRoutes(g *gin.RouterGroup) {
 	g.DELETE("/export/configs/:id", a.require("finance.report"), a.csrf(), a.adminDeleteExportConfig)
 	g.GET("/export/download", a.require("finance.report"), a.adminDownloadExport)
 	g.GET("/expired-ip-logs", a.require("service.manage"), a.adminListExpiredIPLogs)
+	// 到期账单处理（对齐魔方 expired_auto_delete_bill 插件）
+	g.GET("/expired-bill-action", a.require("invoice.manage"), a.adminGetExpiredBillAction)
+	g.PUT("/expired-bill-action", a.require("invoice.manage"), a.csrf(), a.adminSaveExpiredBillAction)
+	g.GET("/expired-bill-logs", a.require("invoice.manage"), a.adminListExpiredBillLogs)
 	g.GET("/audit", a.require("security.audit.read"), a.adminAudit)
 	g.GET("/login-logs", a.require("security.audit.read"), a.adminLoginLogs)
 	g.GET("/api-logs", a.require("security.audit.read"), a.adminListAPILogs)
