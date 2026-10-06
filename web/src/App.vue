@@ -76,6 +76,7 @@ function toggleTheme() {
                 <router-link to="/contracts">合同</router-link>
                 <router-link to="/services">服务</router-link>
                 <router-link to="/flow-packets">流量包</router-link>
+                <router-link to="/divert">产品转移</router-link>
                 <router-link to="/messages">消息</router-link>
                 <router-link to="/tickets">工单</router-link>
                 <router-link to="/referral">推广</router-link>
@@ -111,6 +112,7 @@ function toggleTheme() {
             <router-link v-if="auth.permissions['user.manage']" :to="ADMIN_PATH + '/certifications'">实名审核</router-link>
             <router-link v-if="auth.permissions['service.manage']" :to="ADMIN_PATH + '/services'">服务管理</router-link>
             <router-link v-if="auth.permissions['service.manage']" :to="ADMIN_PATH + '/service-transfers'">产品转移</router-link>
+            <router-link v-if="auth.permissions['service.manage']" :to="ADMIN_PATH + '/product-diverts'">自助转移</router-link>
             <router-link v-if="auth.permissions['flow_packet.manage']" :to="ADMIN_PATH + '/flow-packets'">流量包</router-link>
             <router-link v-if="auth.permissions['client_care.manage']" :to="ADMIN_PATH + '/client-care'">客户关怀</router-link>
             <router-link v-if="auth.permissions['finance.report']" :to="ADMIN_PATH + '/stats'">财务统计</router-link>

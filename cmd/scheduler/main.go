@@ -140,6 +140,20 @@ func main() {
 			}
 		})
 	})
+	// 产品自助转移超时关闭（对齐魔方 product_divert 插件）：转出有效期到了还没被
+	// 接受的转移自动关闭，并作废未支付的费用订单。
+	_, _ = c.AddFunc("@every 5m", func() {
+		withLock("scheduler:product-divert-expire", 240*time.Second, func(ctx context.Context) {
+			n, err := st.ExpireProductDiverts(ctx, 100)
+			if err != nil {
+				log.Printf("expire product diverts: %v", err)
+				return
+			}
+			if n > 0 {
+				log.Printf("closed %d expired product divert(s)", n)
+			}
+		})
+	})
 	// Roadmap 第二十阶段: Session 清理.
 	// 周期人工订单：按 num + unit 的周期为用户生成人工订单（CycleArtificialOrder
 	// 插件对齐）。生成逻辑幂等：每笔订单落在对应周期时点上，重复执行不会重复生成。

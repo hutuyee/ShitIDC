@@ -993,7 +993,7 @@ CBAP 仓库 `plugins/addon/` 下 30 个 zip 经逐个检查：**包内全部 `.p
 | TicketPremium | 工单高级版（部门/字段/回执模板） | 已对齐（§10.30） |
 | WanyunResource | 万云资源：自定义字段、节点 | 已对齐（§10.33） |
 
-主程序包 `zjmf-finance/public/plugins/addons/` 的 5 个（demo_style 示例、expired_ip_log / export_excel 已对齐见 §10.8、expired_auto_delete_bill 与 product_divert 主类 ionCube 加密）本轮复核无变化。
+主程序包 `zjmf-finance/public/plugins/addons/` 的 5 个（demo_style 示例、expired_ip_log / export_excel 已对齐见 §10.8、product_divert 已按前端契约重新落地见 §10.38、expired_auto_delete_bill 主类 ionCube 加密）本轮复核。
 
 说明：本表 30 个插件现已全部对齐或有明确跳过结论——可读契约的（含最初判定「未落地」的 ManualResource / WanyunResource / IdcsmartSale / EContract / ProductDropDownSelect）均按前端资产可见的字段面直接设计实现（§10.31 起的思路）；NoticeSendMerge 连前端资产都没有（§10.37），EContract 的第三方电子签通道以站内流程等价替代（§10.36）。
 
@@ -1452,3 +1452,30 @@ CBAP 包 `addon/NoticeSendMerge.zip` 共 11 个文件：主类 / model / route /
 按 §7.2「识别不了的不编造」原则：不为一个名字发明一套行为。若后续拿到该插件的明文版本或文档，可按站内已有的通知基础设施（`client_care_mails` 收件箱、internal/notify、邮件通道注册表）套用同样的「前端字段面 → 存储层 → 管理页」路径补齐。
 
 至此 §10.15 审计的 CBAP `addon/` 30 个插件全部收口：28 个已对齐（含本轮 5 个），IdcsmartDomain 按 §9.4 跳过（协议加密且涉及真实域名扣费），NoticeSendMerge 按 §10.37 跳过（零契约）。
+
+### 10.38 product_divert 插件（用户自助产品转移）（本轮补齐）
+
+主程序包 `zjmf-finance/public/plugins/addons/product_divert/` 的 PHP（controller / model / validate / lang）ionCube 加密，但 `config/config.php`（状态字典）、`menu.php` / `menuclientarea.php`、`README` 与全部模板（后台 setting / index，用户端 pushpulllist / pushserver / pullserver）可读——此前 §10.8 仅按「主类加密」整体跳过，按 §10.15 的思路以可见契约重新落地（051 迁移）。与 §10.26 的管理员产品转移（HostTransfer）互补：这是**用户对用户**的自助转移。
+
+| 维度 | 参考实现（模板契约） | ShitIDC 落地 |
+|---|---|---|
+| 基础配置 | is_open 启用开关 / validity_period 转出有效期（天，超时未接受自动关闭）/ push_cost 转出费用 / pull_cost 转入费用 / protection_period 订购保护期（订购后多久才能转移）/ product_range[] 可自助转移的产品范围（多选） | `system_settings.product_divert`；`GET/PUT /admin/product-divert/config`（service.manage + CSRF + 审计），后台「自助转移」页表单；金额落「分」 |
+| 发起转出 | pushserver 模态：选产品 + 按手机号或邮箱查接收方（账号前半 + 星号脱敏展示）+ 展示转出费用 | `POST /product-divert/lookup`（精确匹配 email / phone，返回脱敏账号）、`POST /product-divert`（校验：启用、非本人、非已删除服务、保护期、商品范围、无待接收转移）；用户端「产品转移」页发起 |
+| 转出费用 | `push_pay_status` + `payamount(push_invoice_id)`，支付后接收方收到转入通知 | 费用 > 0 时生成 `kind='artificial'`、`kind_detail='divert_push'` 的人工订单（订单 + 账单 7 天到期）；钱包 / 在线支付 / 管理员标记支付三条路径在收尾钩子 `advanceDivertFeeOrderTx` 里标记已付并给接收方发站内通知 |
+| 接收 / 转入 | 接收方列表在「push 已付且待接收」时可见「接收 / 拒绝」；接收后支付转入费用，「支付后，该产品会立刻转移到您的账户中」 | `POST /product-divert/:id/accept`：转出费用未付时拒绝；转入费用 > 0 生成 `divert_pull` 费用单，= 0 立即完成；转入费用支付完成（同一钩子）即迁移产品归属并通知双方 |
+| 状态字典 | config.php：1 待接收 / 2 已完成 / 3 已关闭 / 4 已拒绝 | 同字典（SMALLINT 原值落库，页面同文案） |
+| 取消 / 拒绝 | pushrefuse（转出方取消，已付后仍可取消）/ pullrefuse（接收方拒绝） | `POST /product-divert/:id/cancel`（转出方，状态 → 3）/ `:id/reject`（接收方，状态 → 4）；两者都作废**未支付**的费用订单与账单 |
+| 超时关闭 | validity_period 气泡注释「超过该时间未接受的转出，将会被自动关闭」 | 调度器 @every 5m `ExpireProductDiverts`：过期待接收 → 状态 3 + 作废未支付费用单 |
+| 转移列表 | pushpulllist：产品（name + domain + ip）/ 对方 / 我方费用 / 发起时间 / 完成时间 / 类型（转出·转入）/ 状态 / 操作（支付 / 取消 / 接收 / 拒绝 / 手动检测），状态筛选与分页 | 用户端 `/divert`「产品转移」页同列布局；对方账号掩码；`GET /product-divert`（status 1~4 过滤）；后台「自助转移」页看全量记录（完整邮箱） |
+| 手动检测 | verificationResult（pull 已支付后的兜底核对入口） | `POST /product-divert/:id/verify`：双方费用已支付且仍未完成时补一次迁移，幂等 |
+| 迁移留痕 | 插件留 product_divert 记录 | 迁移完成同时写 `service_transfers`（备注「用户自助转移」），后台「产品转移」记录页可见 |
+
+口径说明（加密代码不可读，按可见契约的最保守解释实现）：
+
+- 转移完成只迁移**所选服务**的归属（`services.user_id`），订单 / 账单 / 支付记录不迁移——插件推送模态只展示单个产品，没有 HostTransfer 的「关联产品自动迁移」语义；
+- 已支付的费用在拒绝 / 取消 / 超时关闭时**不自动退还**（插件模板没有任何退款语义）；未支付的费用订单与账单一并作废，需要退款走管理员既有退款流程；
+- 查找接收方按手机号 / 邮箱**精确匹配**且返回脱敏账号，不提供模糊搜索（防用户枚举）；
+- product_range 不选视为「全部商品可自助转移」（表单语义无更多线索，页面提示写明）；
+- 双方费用各自生成人工订单：转出方付转出费用、接收方付转入费用，费用为 0 的那一侧免支付直接放行。
+
+验证：`gofmt` / `go build ./...` / `go vet ./...` / `go test ./internal/...` 与 `npx vue-tsc --noEmit` 全部通过。

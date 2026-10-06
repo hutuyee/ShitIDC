@@ -14,6 +14,8 @@ import Wallet from './views/Wallet.vue'
 import Vouchers from './views/Vouchers.vue'
 import Services from './views/Services.vue'
 import FlowPackets from './views/FlowPackets.vue'
+import Divert from './views/Divert.vue'
+import AdminProductDiverts from './views/AdminProductDiverts.vue'
 import Messages from './views/Messages.vue'
 import Tickets from './views/Tickets.vue'
 import TicketDetail from './views/TicketDetail.vue'
@@ -85,6 +87,7 @@ const router = createRouter({ history: createWebHistory(), routes: [
   { path: '/contracts', component: Contracts },
   { path: '/services', component: Services },
   { path: '/flow-packets', component: FlowPackets },
+  { path: '/divert', component: Divert },
   { path: '/messages', component: Messages },
   { path: '/messages/:id', component: Messages },
   { path: '/tickets', component: Tickets },
@@ -124,6 +127,7 @@ const router = createRouter({ history: createWebHistory(), routes: [
   { path: ADMIN_PATH + '/services', component: AdminServices },
   { path: ADMIN_PATH + '/service-transfers', component: AdminServiceTransfers },
   { path: ADMIN_PATH + '/flow-packets', component: AdminFlowPackets },
+  { path: ADMIN_PATH + '/product-diverts', component: AdminProductDiverts },
   { path: ADMIN_PATH + '/client-care', component: AdminClientCare },
   { path: ADMIN_PATH + '/ticket-internal', component: AdminTicketInternal },
   { path: ADMIN_PATH + '/ticket-internal/settings', component: AdminTicketInternalSettings },

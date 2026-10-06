@@ -217,6 +217,16 @@ func NewRouter(a *App) *gin.Engine {
 			authed.POST("/flow-packets/:id/purchase", a.require("service.read"), a.csrf(), a.purchaseFlowPacket)
 			authed.POST("/flow-packets/orders/:id/pay", a.require("service.read"), a.csrf(), a.payFlowPacketOrder)
 			authed.POST("/flow-packets/orders/:id/cancel", a.require("service.read"), a.csrf(), a.cancelFlowPacketOrder)
+			// 产品自助转移（对齐魔方 product_divert 插件）：转出 / 接收 / 拒绝 / 取消
+			authed.GET("/product-divert/config", a.require("service.read"), a.myDivertConfig)
+			authed.GET("/product-divert/services", a.require("service.read"), a.myDivertServices)
+			authed.POST("/product-divert/lookup", a.require("service.read"), a.csrf(), a.myDivertLookup)
+			authed.GET("/product-divert", a.require("service.read"), a.myDivertList)
+			authed.POST("/product-divert", a.require("service.read"), a.csrf(), a.myDivertCreate)
+			authed.POST("/product-divert/:id/accept", a.require("service.read"), a.csrf(), a.myDivertAccept)
+			authed.POST("/product-divert/:id/reject", a.require("service.read"), a.csrf(), a.myDivertReject)
+			authed.POST("/product-divert/:id/cancel", a.require("service.read"), a.csrf(), a.myDivertCancel)
+			authed.POST("/product-divert/:id/verify", a.require("service.read"), a.csrf(), a.myDivertVerify)
 			// 客户关怀站内信（对齐魔方 ClientCare 插件）
 			authed.GET("/client-care/mails", a.listMyClientCareMails)
 			authed.GET("/client-care/mails/:id", a.getMyClientCareMail)
@@ -609,6 +619,10 @@ func (a *App) registerAdminRoutes(g *gin.RouterGroup) {
 	g.POST("/services/:id/retry", a.require("service.manage"), a.csrf(), a.adminRetryService)
 	g.GET("/service-transfers", a.require("service.manage"), a.adminListServiceTransfers)
 	g.POST("/service-transfers", a.require("service.manage"), a.csrf(), a.adminTransferService)
+	// 产品自助转移（对齐魔方 product_divert 插件）
+	g.GET("/product-divert/config", a.require("service.manage"), a.adminGetDivertConfig)
+	g.PUT("/product-divert/config", a.require("service.manage"), a.csrf(), a.adminSaveDivertConfig)
+	g.GET("/product-diverts", a.require("service.manage"), a.adminListDiverts)
 	// 流量包（对齐魔方 FlowPacket 插件）
 	g.GET("/flow-packets", a.require("flow_packet.manage"), a.adminListFlowPackets)
 	g.POST("/flow-packets", a.require("flow_packet.manage"), a.csrf(), a.adminCreateFlowPacket)

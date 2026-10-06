@@ -368,6 +368,10 @@ func (s *Store) CompleteOnlinePayment(ctx context.Context, outTradeNo, gatewayTr
 			if err := advanceInvoiceFeeOrderTx(ctx, tx, *orderID); err != nil {
 				return "", 0, nil, "", err
 			}
+			// 产品转移费用单支付完成：推进自助转移状态（store_product_divert.go）。
+			if err := advanceDivertFeeOrderTx(ctx, tx, *orderID); err != nil {
+				return "", 0, nil, "", err
+			}
 			if err := tx.Commit(ctx); err != nil {
 				return "", 0, nil, "", err
 			}

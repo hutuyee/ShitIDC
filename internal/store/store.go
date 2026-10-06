@@ -650,6 +650,10 @@ ON CONFLICT (transaction_id) DO NOTHING`, userID, orderID, walletTxn, total, cur
 		if err := advanceInvoiceFeeOrderTx(ctx, tx, orderID); err != nil {
 			return PayResult{}, err
 		}
+		// 产品转移费用单支付完成：推进自助转移状态（store_product_divert.go）。
+		if err := advanceDivertFeeOrderTx(ctx, tx, orderID); err != nil {
+			return PayResult{}, err
+		}
 		return PayResult{}, nil
 	}
 	if _, err := tx.Exec(ctx, `UPDATE orders SET status='processing',paid_at=now(),updated_at=now() WHERE id=$1`, orderID); err != nil {
