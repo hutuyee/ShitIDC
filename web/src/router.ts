@@ -57,6 +57,8 @@ import AdminProductDropDown from './views/AdminProductDropDown.vue'
 import AdminWanyunResource from './views/AdminWanyunResource.vue'
 import AdminManualResources from './views/AdminManualResources.vue'
 import AdminSales from './views/AdminSales.vue'
+import AdminEContracts from './views/AdminEContracts.vue'
+import Contracts from './views/Contracts.vue'
 import AdminExport from './views/AdminExport.vue'
 import AdminExpiredIpLogs from './views/AdminExpiredIpLogs.vue'
 import AdminAgents from './views/AdminAgents.vue'
@@ -80,6 +82,7 @@ const router = createRouter({ history: createWebHistory(), routes: [
   { path: '/invoice', component: InvoiceCenter },
   { path: '/wallet', component: Wallet },
   { path: '/vouchers', component: Vouchers },
+  { path: '/contracts', component: Contracts },
   { path: '/services', component: Services },
   { path: '/flow-packets', component: FlowPackets },
   { path: '/messages', component: Messages },
@@ -107,6 +110,7 @@ const router = createRouter({ history: createWebHistory(), routes: [
   { path: ADMIN_PATH + '/wanyun-resource', component: AdminWanyunResource },
   { path: ADMIN_PATH + '/manual-resources', component: AdminManualResources },
   { path: ADMIN_PATH + '/sales', component: AdminSales },
+  { path: ADMIN_PATH + '/e-contracts', component: AdminEContracts },
   { path: ADMIN_PATH + '/export', component: AdminExport },
   { path: ADMIN_PATH + '/expired-ip-logs', component: AdminExpiredIpLogs },
   { path: ADMIN_PATH + '/agents', component: AdminAgents },

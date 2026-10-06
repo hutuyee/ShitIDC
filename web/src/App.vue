@@ -73,6 +73,7 @@ function toggleTheme() {
                 <router-link to="/wallet">财务</router-link>
                 <router-link to="/invoice">发票</router-link>
                 <router-link to="/vouchers">代金券</router-link>
+                <router-link to="/contracts">合同</router-link>
                 <router-link to="/services">服务</router-link>
                 <router-link to="/flow-packets">流量包</router-link>
                 <router-link to="/messages">消息</router-link>
@@ -139,6 +140,7 @@ function toggleTheme() {
             <router-link v-if="auth.permissions['wanyun_resource.manage']" :to="ADMIN_PATH + '/wanyun-resource'">万云资源</router-link>
             <router-link v-if="auth.permissions['manual_resource.manage']" :to="ADMIN_PATH + '/manual-resources'">手动资源</router-link>
             <router-link v-if="auth.permissions['sale.manage']" :to="ADMIN_PATH + '/sales'">业务经理</router-link>
+            <router-link v-if="auth.permissions['e_contract.manage']" :to="ADMIN_PATH + '/e-contracts'">电子合同</router-link>
             <router-link v-if="auth.permissions['provider.manage']" :to="ADMIN_PATH + '/settings'">邮件 / SMTP</router-link>
             <router-link v-if="auth.permissions['provider.manage']" :to="ADMIN_PATH + '/providers'">供应商 / 上游</router-link>
             <div class="grow"></div>
