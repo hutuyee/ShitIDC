@@ -4,8 +4,8 @@
 // ShitIDC 早期只有内置 SMTP 一条路，这里把它扩展成注册表：
 //
 //   - 内置 SMTP（system_settings 里的历史配置）作为兜底通道继续可用；
-//   - 其余通道（alimail / subemail / btmail / generic）走 mail_providers 表，
-//     凭据加密入库，后台可增删与设默认；
+//   - 其余通道（alimail / subemail / btmail / idcsmartmail / generic）走
+//     mail_providers 表，凭据加密入库，后台可增删与设默认；
 //   - 解析顺序是「启用中的通道优先，未配置通道时回退到内置 SMTP」，
 //     因此老部署升级后行为不变。
 //

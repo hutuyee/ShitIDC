@@ -1499,3 +1499,17 @@ CBAP 包 `addon/NoticeSendMerge.zip` 共 11 个文件：主类 / model / route /
 未配置（action 为空）时钩子是空操作，默认行为与从前完全一致；处理失败只记日志，不影响终止本身（与到期 IP 记录同一口径）。
 
 验证：`gofmt` / `go build ./...` / `go vet ./...` / `go test ./internal/...` 与 `npx vue-tsc --noEmit` 全部通过。
+
+### 10.40 idcsmartmail 邮件通道 + 参考源全量复核（本轮收口）
+
+补齐 §10.10 复核后的最后两个漏项，并对参考源做了一次**全量枚举复核**（两个插件树、全部 15 个类目逐目录对照路线图）：
+
+**idcsmartmail 智简魔方官方邮件平台**（主程序包 `mail/idcsmartmail`，明文，此前 §10.1 未列入）：POST `api1.idcsmart.com/emailapi.php?action=send`，multipart 表单 email / subject / content / from / from_name，鉴权走 `api:`（AppId）/ `key:`（AppKey）请求头，判据 `status==200`（PHP 松散比较，数字与字符串都算成功）。落地为 `internal/mail/idcsmartmail` 通道（`internal/mail` 注册表 + 后台「邮件通道」面板按通道渲染字段），api/key 属密钥入库、from/from_name 走普通配置；假服务器测试钉死请求头、multipart 字段与两种成功形态 / 失败文案。有意差异：参考实现把本机附件目录文件作为 multipart 文件域上传，站内发送链路（mail.send 载荷）没有附件字段，attachments 不落地；参考实现固定 `http://` 端点，本实现保持一致（APIBase 可覆盖供测试与私有部署）。
+
+**behavior/ 类目**（主程序包 `plugins/behavior`）：`application/CustomHooks.php`、`TestHooks.php`、`template/CustomHooks.php` 是框架文档里的「客户自定义钩子」占位文件——魔方的扩展点本身，不是插件、没有业务契约；站内等价能力是事件总线（`internal/events`）+ WASM 扩展（§7）+ Webhook 推送，无需移植。
+
+**ali_pay**（主程序包 `gateways/ali_pay`，明文）：与 CBAP 包 `AliPay.zip` 同为支付宝官方 `AlipayTradeService` 电脑网站支付，已被 `internal/payment/alipay`（§2.2）覆盖，不重复实现。
+
+全量复核结论（按类目）：主程序包 8 个可枚举类目（addons / behavior / captcha / certification / firewall / gateways / mail / oauth / servers / sms）与 CBAP 包 12 个类目全部有「已对齐」或「有据跳过」的结论——addon/ 30 个见 §10.15，gateway 14 个见 §9.1/§10.7，server 7 个见 §9.2/§9.4/§10.12，sms 7+6 个见 §8.1/§10.3，oauth 4+7 个见 §8.2/§10.2，certification 6+6 个见 §10.5/§10.6，captcha 2 个见 §10.4，mail 4+3 个见 §10.1 + 本轮，oss 见 §10.14，widget / sub_server / template 见 §10.10~§10.13，addons 5 个见 §10.8 + §10.38 + §10.39。剩余差距仍然只有 §4 表列出的两类 ionCube 加密模块（域名注册 / DirectAdmin·MfCloud 系列）。
+
+验证：`gofmt` / `go build ./...` / `go vet ./...` / `go test ./internal/...` 与 `npx vue-tsc --noEmit` 全部通过。

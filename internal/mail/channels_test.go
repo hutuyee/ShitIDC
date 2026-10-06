@@ -233,3 +233,76 @@ func TestMailRegistryNames(t *testing.T) {
 		}
 	}
 }
+
+// 智简魔方邮件平台：api/key 走请求头，业务字段走 multipart 表单；
+// status 判据与 PHP 松散比较一致（数字 200 与字符串 "200" 都算成功）。
+func TestIdcsmartmailSend(t *testing.T) {
+	var gotAPI, gotKey, gotCT string
+	var form emailMultiForm
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAPI = r.Header.Get("api")
+		gotKey = r.Header.Get("key")
+		gotCT = r.Header.Get("Content-Type")
+		form = parseMultiForm(t, r)
+		writeStr(w, `{"status":200,"msg":"ok"}`)
+	}))
+	t.Cleanup(srv.Close)
+	m := NewIdcsmartmail()
+	m.APIBase = srv.URL
+
+	cfg := Config{Fields: map[string]string{"api": "app1", "from": "admin", "from_name": "ShitIDC"}}
+	secret := Secret{"key": "k1"}
+	if err := m.Send(context.Background(), cfg, secret, Message{To: "user@example.com", Subject: "主题", HTML: "<p>hi</p>"}); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if gotAPI != "app1" || gotKey != "k1" {
+		t.Fatalf("headers api=%q key=%q", gotAPI, gotKey)
+	}
+	if !strings.HasPrefix(gotCT, "multipart/form-data") {
+		t.Fatalf("content type = %q, want multipart/form-data", gotCT)
+	}
+	for k, want := range map[string]string{
+		"email": "user@example.com", "subject": "主题", "content": "<p>hi</p>",
+		"from": "admin", "from_name": "ShitIDC",
+	} {
+		if form[k] != want {
+			t.Fatalf("form[%s] = %q, want %q", k, form[k], want)
+		}
+	}
+
+	// 字符串 "200" 与非 200 的行为。
+	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeStr(w, `{"status":"200"}`)
+	}))
+	t.Cleanup(srv2.Close)
+	m.APIBase = srv2.URL
+	if err := m.Send(context.Background(), cfg, secret, Message{To: "u@e.com", Subject: "s", HTML: "b"}); err != nil {
+		t.Fatalf("string 200 should pass: %v", err)
+	}
+	srv3 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeStr(w, `{"status":403,"msg":"key 错误"}`)
+	}))
+	t.Cleanup(srv3.Close)
+	m.APIBase = srv3.URL
+	err := m.Send(context.Background(), cfg, secret, Message{To: "u@e.com", Subject: "s", HTML: "b"})
+	if err == nil || !strings.Contains(err.Error(), "key 错误") {
+		t.Fatalf("want upstream msg in error, got %v", err)
+	}
+}
+
+// emailMultiForm 是解析 multipart/form-data 后的字段表（只取文本域）。
+type emailMultiForm map[string]string
+
+func parseMultiForm(t *testing.T, r *http.Request) emailMultiForm {
+	t.Helper()
+	if err := r.ParseMultipartForm(1 << 20); err != nil {
+		t.Fatalf("ParseMultipartForm: %v", err)
+	}
+	out := emailMultiForm{}
+	for k, vs := range r.MultipartForm.Value {
+		if len(vs) > 0 {
+			out[k] = vs[0]
+		}
+	}
+	return out
+}

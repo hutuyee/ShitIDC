@@ -182,6 +182,12 @@ const SMS_FIELD_SPECS: Record<string, FieldSpec[]> = {
     { key: 'content_template', label: '短信文案模板（{code}/{ttl} 占位，留空用默认）', optional: true, area: true },
     { key: 'user', label: '平台账号', secret: true }, { key: 'pass', label: '平台密码', secret: true },
   ],
+  idcsmartmail: [
+    { key: 'api', label: 'AppId（api）' },
+    { key: 'key', label: 'AppKey（key）', secret: true },
+    { key: 'from', label: '发件人（官方邮件平台为 @ 前部分）' },
+    { key: 'from_name', label: '发件人名称', optional: true },
+  ],
   generic: [
     { key: 'endpoint', label: '请求地址' }, { key: 'content_template', label: '短信文案模板（{code}/{ttl} 占位）', area: true },
     { key: 'method', label: '请求方法 GET/POST（默认 POST）', optional: true },
@@ -292,7 +298,7 @@ mailForm.values = {}
 const mailSaving = ref(false)
 const mailFieldSpecs = () => MAIL_FIELD_SPECS[mailForm.provider] || []
 const mailChannelLabels: Record<string, string> = {
-  alimail: '阿里云邮件推送', subemail: '赛邮邮件', btmail: '宝塔邮局', generic: '通用 HTTP',
+  alimail: '阿里云邮件推送', subemail: '赛邮邮件', btmail: '宝塔邮局', idcsmartmail: '智简魔方邮件平台', generic: '通用 HTTP',
 }
 function pickMailProvider(p: string) {
   mailForm.provider = p
