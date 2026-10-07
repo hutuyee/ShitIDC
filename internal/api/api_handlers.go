@@ -197,8 +197,14 @@ func (a *App) createToken(c *gin.Context) {
 		httpx.Fail(c, 500, "INTERNAL_ERROR", "生成 Token 失败")
 		return
 	}
-	scopes := sanitizeTokenScopes(in.Scopes)
-	if err := a.Store.CreateAPIToken(c, p.User.ID, in.Name, keyID, security.SHA256Hex(secret), scopes, in.ExpiresAt); err != nil {
+	// 落库用与鉴权一致的 HMAC（此前存 SHA256、校验用 HMAC，新建的 Token 全部无法通过鉴权）。
+	secretHash, err := security.HMACSecret(a.Cfg.MasterKey, secret)
+	if err != nil {
+		httpx.Fail(c, 500, "INTERNAL_ERROR", "生成 Token 失败")
+		return
+	}
+	scopes := sanitizeTokenScopes(in.Scopes, p.Permissions)
+	if err := a.Store.CreateAPIToken(c, p.User.ID, in.Name, keyID, secretHash, scopes, in.ExpiresAt); err != nil {
 		httpx.Fail(c, 500, "INTERNAL_ERROR", "创建 Token 失败")
 		return
 	}
@@ -217,22 +223,26 @@ func (a *App) revokeToken(c *gin.Context) {
 	httpx.OK(c, 200, map[string]bool{"ok": true})
 }
 
-// sanitizeTokenScopes 过滤掉未知权限，避免客户端塞任意字符串当 scope。
-func sanitizeTokenScopes(raw []string) []string {
-	allowed := map[string]bool{
-		"order.read": true, "order.create": true, "service.read": true, "service.operate": true,
-		"wallet.read": true, "ticket.read": true, "ticket.create": true,
-		"profile.read": true, "profile.update": true, "api_token.manage": true,
-	}
+// sanitizeTokenScopes 把 scope 收敛为调用者自身权限的子集：既挡掉客户端塞进来的
+// 未知权限，也避免客户给自己开出管理级 scope（原先的白名单不校验归属）。
+// 空列表回退到常见的只读组合，同样按调用者实际权限过滤。
+func sanitizeTokenScopes(raw []string, perms map[string]bool) []string {
 	out := []string{}
+	seen := map[string]bool{}
 	for _, s := range raw {
 		s = strings.TrimSpace(s)
-		if allowed[s] {
-			out = append(out, s)
+		if s == "" || seen[s] || !perms[s] {
+			continue
 		}
+		seen[s] = true
+		out = append(out, s)
 	}
 	if len(out) == 0 {
-		out = []string{"order.read", "service.read", "wallet.read"}
+		for _, s := range []string{"order.read", "service.read", "wallet.read"} {
+			if perms[s] {
+				out = append(out, s)
+			}
+		}
 	}
 	return out
 }
