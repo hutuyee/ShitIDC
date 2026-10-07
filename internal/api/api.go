@@ -316,6 +316,9 @@ const (
 // 抽成函数是为了让主前缀与兼容前缀共用**同一份**路由表：
 // 将来新增接口只改这一处，不会出现「某个前缀少了几个接口」这种只在特定部署下暴露的偏差。
 func (a *App) registerAdminRoutes(g *gin.RouterGroup) {
+	// 后台整组统一要求 admin.access。此前个别路由误用了客户角色同样拥有的
+	// product.read / order.read / service.operate 等权限，客户账号即可调用后台接口。
+	g.Use(a.require("admin.access"))
 	g.GET("/users", a.require("user.read"), a.adminListUsers)
 	// 统一搜索：后台选用户/商品/服务/订单都用它，不必手抄 UUID。
 	g.GET("/search", a.require("user.read"), a.adminSearch)
@@ -354,7 +357,8 @@ func (a *App) registerAdminRoutes(g *gin.RouterGroup) {
 	g.DELETE("/announcements/:id", a.require("announcement.manage"), a.csrf(), a.adminDeleteAnnouncement)
 	g.GET("/payment-methods/supported", a.require("wallet.adjust"), a.listSupportedPaymentMethods)
 	g.POST("/wallet/adjust", a.require("wallet.adjust"), a.csrf(), a.adminAdjustWallet)
-	g.GET("/orders", a.require("order.read"), a.adminListOrders)
+	// 全站订单属于管理侧数据，用 staff 级的 user.read，而不是客户侧的 order.read。
+	g.GET("/orders", a.require("user.read"), a.adminListOrders)
 	g.GET("/payment-providers", a.require("wallet.adjust"), a.adminListPaymentProviders)
 	g.POST("/payment-providers", a.require("wallet.adjust"), a.csrf(), a.adminCreatePaymentProvider)
 	g.PUT("/payment-providers/:id", a.require("wallet.adjust"), a.csrf(), a.adminUpdatePaymentProvider)
@@ -374,8 +378,9 @@ func (a *App) registerAdminRoutes(g *gin.RouterGroup) {
 	g.POST("/providers/:id/products/:upstream_id/import", a.require("product.write"), a.csrf(), a.adminImportProviderProduct)
 	// 魔方（ZJMF）上游访问密钥：把 ShitIDC 作为魔方财务的上游接口。
 	// 超量计费：手动出账与账单明细
-	g.POST("/services/:id/overage/settle", a.require("service.operate"), a.csrf(), a.adminSettleOverage)
-	g.GET("/services/:id/overage/charges", a.require("service.read"), a.adminListOverageCharges)
+	// 超量计费结算是管理动作，且会读取他人服务明细，提升为 service.manage（管理员）。
+	g.POST("/services/:id/overage/settle", a.require("service.manage"), a.csrf(), a.adminSettleOverage)
+	g.GET("/services/:id/overage/charges", a.require("service.manage"), a.adminListOverageCharges)
 	// 短信通道与发送流水
 	g.GET("/sms-providers", a.require("settings.manage"), a.adminListSmsProviders)
 	g.POST("/sms-providers", a.require("settings.manage"), a.csrf(), a.adminCreateSmsProvider)
@@ -591,7 +596,7 @@ func (a *App) registerAdminRoutes(g *gin.RouterGroup) {
 	g.GET("/recommend/withdrawals", a.require("wallet.adjust"), a.adminListRecommendWithdrawals)
 	g.PUT("/recommend/withdrawals/:id", a.require("wallet.adjust"), a.csrf(), a.adminSetRecommendWithdrawal)
 	g.GET("/export/users.csv", a.require("user.read"), a.adminExportUsers)
-	g.GET("/export/orders.csv", a.require("order.read"), a.adminExportOrders)
+	g.GET("/export/orders.csv", a.require("user.read"), a.adminExportOrders)
 	g.GET("/export/datasets", a.require("finance.report"), a.adminListExportDatasets)
 	g.GET("/export/configs", a.require("finance.report"), a.adminListExportConfigs)
 	g.POST("/export/configs", a.require("finance.report"), a.csrf(), a.adminCreateExportConfig)
