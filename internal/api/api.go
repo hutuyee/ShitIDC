@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	stdmail "net/mail"
 	"runtime/debug"
 	"strings"
 	"time"
@@ -967,6 +968,28 @@ func clientIP(c *gin.Context) string {
 	return ""
 }
 
+// validEmail 校验邮箱是单一、可打印的纯地址：不接受显示名、尖括号、引号、
+// 空白与控制字符，域名必须带点。注册/发码/找回/重置都走这里，避免把
+// HTML 载荷之类的字符串当作邮箱写进库（它们会进入合同模板等渲染面）。
+func validEmail(email string) bool {
+	if email == "" || len(email) > 254 {
+		return false
+	}
+	if strings.ContainsAny(email, " <>\t\r\n\"(),;:") {
+		return false
+	}
+	at := strings.LastIndexByte(email, '@')
+	if at <= 0 || at == len(email)-1 {
+		return false
+	}
+	domain := email[at+1:]
+	if !strings.Contains(domain, ".") || strings.HasPrefix(domain, ".") || strings.HasSuffix(domain, ".") || strings.Contains(domain, "..") {
+		return false
+	}
+	addr, err := stdmail.ParseAddress(email)
+	return err == nil && addr.Name == "" && addr.Address == email
+}
+
 // renderMail renders an admin-editable template when one exists, otherwise
 // falls back to the built-in subject/body pair (§17 邮件模板).
 func (a *App) renderMail(name, fallbackSubject, fallbackBody string, vars map[string]string) (string, string) {
@@ -1029,7 +1052,7 @@ func (a *App) register(c *gin.Context) {
 		return
 	}
 	in.Email = strings.TrimSpace(strings.ToLower(in.Email))
-	if !strings.Contains(in.Email, "@") {
+	if !validEmail(in.Email) {
 		httpx.Fail(c, 400, "INVALID_EMAIL", "邮箱格式错误")
 		return
 	}
@@ -1118,7 +1141,7 @@ func (a *App) sendEmailCode(c *gin.Context) {
 		return
 	}
 	in.Email = strings.TrimSpace(strings.ToLower(in.Email))
-	if !strings.Contains(in.Email, "@") {
+	if !validEmail(in.Email) {
 		httpx.Fail(c, 400, "INVALID_EMAIL", "邮箱格式错误")
 		return
 	}
@@ -1177,7 +1200,7 @@ func (a *App) verifyEmail(c *gin.Context) {
 	}
 	in.Email = strings.TrimSpace(strings.ToLower(in.Email))
 	code := strings.TrimSpace(in.Code)
-	if !strings.Contains(in.Email, "@") || len(code) != 6 {
+	if !validEmail(in.Email) || len(code) != 6 {
 		httpx.Fail(c, 400, "INVALID_REQUEST", "邮箱或验证码格式错误")
 		return
 	}

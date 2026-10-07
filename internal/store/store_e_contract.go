@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"regexp"
 	"strings"
 	"time"
@@ -399,7 +400,9 @@ func renderEContractContent(detail string, vars map[string]string) string {
 		key := strings.TrimSuffix(strings.TrimPrefix(m, "{{"), "}}")
 		key = strings.Trim(strings.TrimSpace(key), " ")
 		if v, ok := vars[key]; ok {
-			return v
+			// 模板变量一律 HTML 转义：客户邮箱等是用户可控输入，原样拼接会在
+			// 后台 v-html 预览与合同下载页形成存储型 XSS。
+			return html.EscapeString(v)
 		}
 		return m
 	})
@@ -641,26 +644,28 @@ func (s *Store) MailEContract(ctx context.Context, publicID, company, number str
 
 // EContractHTML 渲染一份可打印的合同 HTML（替代插件的 PDF 生成；风格保持正式版式）。
 func (v EContract) EContractHTML(chop, logo string) string {
+	number := html.EscapeString(v.Number)
+	templateName := html.EscapeString(v.TemplateName)
 	chopHTML := ""
 	if chop != "" {
-		chopHTML = `<img src="` + chop + `" alt="印章" style="width:110px" />`
+		chopHTML = `<img src="` + html.EscapeString(chop) + `" alt="印章" style="width:110px" />`
 	}
 	logoHTML := ""
 	if logo != "" {
-		logoHTML = `<img src="` + logo + `" alt="logo" style="height:48px" />`
+		logoHTML = `<img src="` + html.EscapeString(logo) + `" alt="logo" style="height:48px" />`
 	}
-	return `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><title>合同 ` + v.Number + `</title>
+	return `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><title>合同 ` + number + `</title>
 <style>body{font-family:SimSun,serif;max-width:820px;margin:24px auto;padding:0 24px;line-height:1.9;color:#111}
 h1{text-align:center;font-size:22px}.meta{color:#555;font-size:13px;border-bottom:1px solid #ddd;padding-bottom:12px;margin-bottom:20px}
 .sign{margin-top:48px;display:flex;justify-content:space-between;align-items:flex-end}
 @media print{body{margin:0}}</style></head><body>
 <div style="text-align:center">` + logoHTML + `</div>
 <h1>电子合同</h1>
-<div class="meta">合同编号：` + v.Number + ` ｜ 模板：` + v.TemplateName + ` ｜ 签订时间：` + v.CreatedAt.Format("2006-01-02") + `</div>
+<div class="meta">合同编号：` + number + ` ｜ 模板：` + templateName + ` ｜ 签订时间：` + v.CreatedAt.Format("2006-01-02") + `</div>
 <div class="content">` + v.Content + `</div>
 <div class="sign"><div>客户签字：<br>` + func() string {
 		if v.HasSign {
-			return `<img src="` + v.SignImage + `" alt="签名" style="height:56px" />`
+			return `<img src="` + html.EscapeString(v.SignImage) + `" alt="签名" style="height:56px" />`
 		}
 		return `（未签订）`
 	}() + `</div><div>单位盖章：<br>` + chopHTML + `</div></div>

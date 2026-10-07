@@ -73,7 +73,7 @@ func (a *App) requestPasswordReset(c *gin.Context) {
 		return
 	}
 	email := strings.TrimSpace(strings.ToLower(in.Email))
-	if !strings.Contains(email, "@") {
+	if !validEmail(email) {
 		httpx.Fail(c, 400, "INVALID_EMAIL", "邮箱格式错误")
 		return
 	}
@@ -133,7 +133,7 @@ func (a *App) confirmPasswordReset(c *gin.Context) {
 	}
 	email := strings.TrimSpace(strings.ToLower(in.Email))
 	code := strings.TrimSpace(in.Code)
-	if !strings.Contains(email, "@") || len(code) != 6 {
+	if !validEmail(email) || len(code) != 6 {
 		httpx.Fail(c, 400, "INVALID_REQUEST", "邮箱或验证码格式错误")
 		return
 	}
