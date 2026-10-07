@@ -147,7 +147,7 @@ func (a *App) compatCreateService(c *gin.Context) {
 		idempotency = strings.TrimSpace(in.RequestID)
 	}
 	if idempotency != "" {
-		if existing, err := a.Store.FindPaidServiceByPaymentKey(c, idempotency); err == nil && len(existing) > 0 {
+		if existing, err := a.Store.FindPaidServiceByPaymentKey(c, p.User.ID, idempotency); err == nil && len(existing) > 0 {
 			c.JSON(http.StatusOK, map[string]any{"status": 200, "msg": "success (idempotent replay)", "id": existing[0], "data": map[string]any{"id": existing[0]}})
 			return
 		}

@@ -902,6 +902,13 @@ func writeCSVRow(sb *strings.Builder, cells []string) {
 		if i > 0 {
 			sb.WriteByte(',')
 		}
+		// 防公式注入：Excel/Sheets 会把 = + - @ 开头（含 Tab/CR）的单元格当公式执行。
+		if cell != "" {
+			switch cell[0] {
+			case '=', '+', '-', '@', '\t', '\r':
+				cell = "'" + cell
+			}
+		}
 		if strings.ContainsAny(cell, ",\"\n\r") {
 			cell = "\"" + strings.ReplaceAll(cell, "\"", "\"\"") + "\""
 		}

@@ -398,7 +398,7 @@ func (a *App) upstreamHostCreate(c *gin.Context) {
 	if idempotency == "" {
 		idempotency = "magiccube:" + key.KeyID + ":" + firstNonEmptyAPI(upstreamPost(c, "hostid"), upstreamPost(c, "domain"), productRef)
 	}
-	if existing, err := a.Store.FindPaidServiceByPaymentKey(c, idempotency); err == nil && len(existing) > 0 {
+	if existing, err := a.Store.FindPaidServiceByPaymentKey(c, key.UserUID, idempotency); err == nil && len(existing) > 0 {
 		inst, ierr := a.Store.GetServiceInstance(c, existing[0])
 		if ierr == nil {
 			upstreamOK(c, "success (idempotent replay)", a.upstreamHostData(inst, ""))

@@ -2,12 +2,20 @@ package api
 
 import (
 	"errors"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/hutuyee/ShitIDC/internal/httpx"
 	"github.com/hutuyee/ShitIDC/internal/store"
+)
+
+// 接收方查询限流：防止按手机号/邮箱枚举站内用户。
+const (
+	divertLookupWindow = 10 * time.Minute
+	divertLookupMax    = 20
 )
 
 // 产品自助转移（对齐魔方主程序附属插件 product_divert）。
@@ -71,6 +79,7 @@ func (a *App) myDivertServices(c *gin.Context) {
 
 // myDivertLookup 按手机号 / 邮箱精确查找接收方，返回掩码账号。
 func (a *App) myDivertLookup(c *gin.Context) {
+	p, _ := getPrincipal(c)
 	var in struct {
 		Name string `json:"name"`
 	}
@@ -78,7 +87,23 @@ func (a *App) myDivertLookup(c *gin.Context) {
 		httpx.Fail(c, 400, "INVALID_REQUEST", "请求格式错误")
 		return
 	}
-	id, email, err := a.Store.DivertLookupTarget(c, in.Name)
+	// 防枚举：限制单用户查询频率（Redis 不可用时降级为不限制）。
+	if a.Redis != nil {
+		key := "divert:lookup:" + strconv.FormatInt(p.User.ID, 10)
+		n, rerr := a.Redis.Incr(c, key).Result()
+		if rerr == nil {
+			if n == 1 {
+				_ = a.Redis.Expire(c, key, divertLookupWindow).Err()
+			}
+			if n > divertLookupMax {
+				httpx.Fail(c, 429, "RATE_LIMITED", "查询过于频繁，请稍后再试")
+				return
+			}
+		}
+	}
+	query := strings.TrimSpace(in.Name)
+	id, email, err := a.Store.DivertLookupTarget(c, query)
+	_ = a.Store.Audit(c, p.User.ID, "product_divert.lookup", "user", "", c.GetString("request_id"), clientIP(c), c.Request.UserAgent(), nil, map[string]any{"query": query, "found": err == nil})
 	if errors.Is(err, store.ErrNotFound) {
 		httpx.Fail(c, 404, "DIVERT_USER_NOT_FOUND", "没有找到该手机号或邮箱对应的用户")
 		return

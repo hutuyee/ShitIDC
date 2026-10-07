@@ -28,6 +28,10 @@ const (
 	smsMaxPerMinute = 1
 	smsMaxPerHour   = 5
 	smsMaxPerDay    = 10
+	// 校验窗口限流：错 5 次锁定只覆盖单个验证码，频繁换码仍可继续猜；
+	// 按 IP / 手机号再叠一层时间窗上限。
+	smsVerifyWindow      = 10 * time.Minute
+	smsVerifyMaxAttempts = 20
 )
 
 // sendSMSCode 发送短信验证码。默认用于注册；登录/绑定等场景通过 purpose 区分。
@@ -143,6 +147,26 @@ func (a *App) verifySMSCode(c *gin.Context) {
 	purpose := strings.TrimSpace(in.Purpose)
 	if purpose == "" {
 		purpose = "register"
+	}
+	if phone == "" {
+		httpx.Fail(c, 400, "CODE_INVALID", "验证码错误或已过期")
+		return
+	}
+	// 防爆破限流（Redis 不可用时降级放行）。
+	if a.Redis != nil {
+		for _, key := range []string{"sms:verify:ip:" + security.SHA256Hex(clientIP(c)), "sms:verify:phone:" + security.SHA256Hex(phone)} {
+			n, rerr := a.Redis.Incr(c, key).Result()
+			if rerr != nil {
+				continue
+			}
+			if n == 1 {
+				_ = a.Redis.Expire(c, key, smsVerifyWindow).Err()
+			}
+			if n > smsVerifyMaxAttempts {
+				httpx.Fail(c, 429, "CODE_RATE_LIMITED", "校验过于频繁，请稍后再试")
+				return
+			}
+		}
 	}
 	if err := a.Store.ConsumeSmsCode(c, phone, purpose, security.SHA256Hex(strings.TrimSpace(in.Code))); err != nil {
 		httpx.Fail(c, 400, mapCodeError(err), "验证码错误或已过期")

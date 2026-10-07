@@ -205,12 +205,13 @@ func (s *Store) GetServiceOwner(ctx context.Context, publicID string) (int64, er
 // FindPaidServiceByPaymentKey resolves the services created by a wallet
 // payment made under the given idempotency key, making compat create calls
 // retry-safe: a repeated Idempotency-Key returns the already-provisioned
-// service instead of double-charging.
-func (s *Store) FindPaidServiceByPaymentKey(ctx context.Context, idempotencyKey string) ([]string, error) {
+// service instead of double-charging. Scoped to the owner user so one
+// tenant's key can never resolve another tenant's service.
+func (s *Store) FindPaidServiceByPaymentKey(ctx context.Context, userID int64, idempotencyKey string) ([]string, error) {
 	rows, err := s.DB.Query(ctx, `SELECT sv.public_id::text FROM wallet_transactions wt
 JOIN orders o ON o.public_id = wt.reference_id
 JOIN services sv ON sv.order_id = o.id
-WHERE wt.idempotency_key=$1 AND wt.type='debit' AND wt.reference_type='order'`, idempotencyKey)
+WHERE o.user_id=$2 AND wt.idempotency_key=$1 AND wt.type='debit' AND wt.reference_type='order'`, idempotencyKey, userID)
 	if err != nil {
 		return nil, err
 	}
