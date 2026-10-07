@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -132,6 +133,23 @@ func (a *App) requireUpstreamKey() gin.HandlerFunc {
 			upstreamFail(c, http.StatusUnauthorized, "签名校验失败："+err.Error())
 			c.Abort()
 			return
+		}
+		// 防重放：signature 是 time/random/token 的摘要，正常请求的 random
+		// 不会重复；同一签名在容差窗口内再次出现即可判定为重放。Redis 不可用时
+		// 降级放行（记录日志），不因此阻断上游调用。
+		if a.Redis != nil {
+			nonce := "upstream:nonce:" + key.KeyID + ":" + security.SHA256Hex(sig.Signature)
+			fresh, rerr := a.Redis.SetNX(c, nonce, 1, upstreamTolerance).Result()
+			if rerr != nil {
+				slog.Warn("upstream replay guard unavailable", "error", rerr)
+			} else if !fresh {
+				a.Store.TouchUpstreamKey(c, key.KeyID, clientIP(c), "replay rejected")
+				upstreamFail(c, http.StatusUnauthorized, "请求签名已被使用（疑似重放）")
+				c.Abort()
+				return
+			}
+		} else {
+			slog.Warn("upstream replay guard disabled: redis not configured")
 		}
 		a.Store.TouchUpstreamKey(c, key.KeyID, clientIP(c), "")
 		c.Set(upstreamKeyCtx, key)

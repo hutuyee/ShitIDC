@@ -31,6 +31,7 @@
  *
  * 注意：这里刻意不依赖 ShitIDC 侧的模块化约定（例如 host_build / host_locked 之类的
  * 宝塔面板风格路径），因为 ShitIDC 的接口是自有的、成对的；改协议只需同时改两端。
+ * TLS：默认校验对端证书；仅在接口参数显式传 insecure_tls=1/true 时跳过（自签面板）。
  */
 
 /**
@@ -169,8 +170,11 @@ function shitidc_Request($params, $path, array $payload = [])
     curl_setopt($ch, CURLOPT_HEADER, 0);
     curl_setopt($ch, CURLOPT_TIMEOUT, 30);
     curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+    // 默认校验证书链与主机名；自签证书环境在接口参数显式传 insecure_tls=1/true 才跳过。
+    $insecure = isset($params['insecure_tls'])
+        && in_array(strtolower(trim((string) $params['insecure_tls'])), ['1', 'true', 'yes', 'on'], true);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, !$insecure);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, $insecure ? 0 : 2);
     curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/x-www-form-urlencoded']);
     $body = curl_exec($ch);
     $err  = curl_error($ch);

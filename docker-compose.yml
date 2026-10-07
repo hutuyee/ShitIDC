@@ -3,7 +3,8 @@ services:
     image: postgres:17-alpine
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-shitidc}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-shitidc_change_me}
+      # 必填：不提供默认口令，未在 .env / 环境中设置时 compose 直接报错。
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set - see .env.example}
       POSTGRES_DB: ${POSTGRES_DB:-shitidc}
     volumes:
       - pgdata:/var/lib/postgresql/data

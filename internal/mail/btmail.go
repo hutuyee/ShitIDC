@@ -5,8 +5,8 @@
 // 成功判据：响应 JSON 的 status 必须是布尔 true（与参考实现一致，
 // 字符串 "true" 不算——宝塔接口返回的就是布尔值）。
 //
-// 宝塔面板默认使用自签证书，参考实现直接关掉了证书校验；
-// 这里做成配置项 insecure_tls（默认开启以对齐行为），要求安全可显式关闭。
+// 宝塔面板常用自签证书：这里默认仍校验对端证书，
+// 自签环境需显式设置 insecure_tls=true 才跳过（参考实现是无条件跳过）。
 package mail
 
 import (
@@ -72,7 +72,8 @@ func (b *Btmail) Send(ctx context.Context, cfg Config, secret Secret, msg Messag
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	client := &http.Client{Timeout: 15 * time.Second}
-	if cfg.Field("insecure_tls") != "false" {
+	// 默认校验证书链与主机名；只有显式 insecure_tls=true 才跳过（自签面板）。
+	if cfg.Field("insecure_tls") == "true" {
 		client.Transport = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
 	}
 	resp, err := client.Do(req)

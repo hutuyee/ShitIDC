@@ -5,6 +5,7 @@
 //   - serverid:     virtualizor server id
 //   - plan / osid / ips / space_gb / ram_mb / cores: VPS defaults
 //   - allow_private: permit intranet panel addresses
+//   - allow_insecure_tls: 显式允许自签证书（默认 false，开启后失去中间人防护）
 //
 // providers.secret_encrypted holds the API key + password JSON:
 //
@@ -42,6 +43,8 @@ type Config struct {
 	Cores        int    `json:"cores"`
 	BandwidthGB  int    `json:"bandwidth_gb"`
 	AllowPrivate bool   `json:"allow_private"`
+	// AllowInsecureTLS 仅在显式配置时跳过证书校验（Virtualizor 常用自签证书）。
+	AllowInsecureTLS bool `json:"allow_insecure_tls"`
 }
 
 type Client struct {
@@ -57,9 +60,11 @@ func New(cfg Config) (*Client, error) {
 		return nil, errors.New("virtualizor 需要 API Key 与 API Pass")
 	}
 	hc := security.SafeHTTPClient(cfg.AllowPrivate, 60*time.Second)
-	if t, ok := hc.Transport.(*http.Transport); ok {
-		// Many Virtualizor panels run self-signed certificates.
-		t.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	if cfg.AllowInsecureTLS {
+		if t, ok := hc.Transport.(*http.Transport); ok {
+			// 仅显式开启时跳过证书校验；自签面板请改用受信证书。
+			t.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+		}
 	}
 	return &Client{cfg: cfg, hc: hc}, nil
 }
